@@ -8,7 +8,8 @@ import { colours } from './src/components/colours';
 import MainListScreen from './src/screens/MainListScreen';
 import AddItemScreen from './src/screens/AddItemScreen';
 import EditItemScreen from './src/screens/EditItemScreen';
-import { requestNotificationPermissions } from './src/notifications/scheduler';
+import { requestNotificationPermissions, rescheduleAllNotifications } from './src/notifications/scheduler';
+import { loadItems } from './src/domain/items/storage';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -22,7 +23,11 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   useEffect(() => {
-    requestNotificationPermissions();
+    (async () => {
+      await requestNotificationPermissions();
+      const items = await loadItems();
+      await rescheduleAllNotifications(items);
+    })();
   }, []);
 
   return (

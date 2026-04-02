@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -11,10 +11,8 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SinceItem, RootStackParamList } from '../types';
-import { loadItems, updateItem, deleteItem } from '../storage/items';
-import { sortItems } from '../utils/statusUtils';
-import { todayString } from '../utils/dateUtils';
-import { scheduleItemNotifications, cancelItemNotifications } from '../notifications/scheduler';
+import { DerivedItem } from '../domain/items/types';
+import { getDerivedItems, markItemDone, deleteItem } from '../domain/items/service';
 import ItemCard from '../components/ItemCard';
 import { colours } from '../components/colours';
 
@@ -29,11 +27,10 @@ const QUICK_START = [
 
 export default function MainListScreen() {
   const navigation = useNavigation<Nav>();
-  const [items, setItems] = useState<SinceItem[]>([]);
+  const [items, setItems] = useState<DerivedItem[]>([]);
 
   const refresh = useCallback(async () => {
-    const loaded = await loadItems();
-    setItems(sortItems(loaded));
+    setItems(await getDerivedItems());
   }, []);
 
   useFocusEffect(
@@ -43,18 +40,11 @@ export default function MainListScreen() {
   );
 
   async function handleMarkDone(item: SinceItem) {
-    const updated: SinceItem = {
-      ...item,
-      lastDoneDate: todayString(),
-      updatedAt: new Date().toISOString(),
-    };
-    await updateItem(updated);
-    await scheduleItemNotifications(updated);
+    await markItemDone(item.id);
     refresh();
   }
 
   async function handleDelete(item: SinceItem) {
-    await cancelItemNotifications(item.id);
     await deleteItem(item.id);
     refresh();
   }
@@ -87,9 +77,7 @@ export default function MainListScreen() {
               <TouchableOpacity
                 key={q.name}
                 style={styles.chip}
-                onPress={() =>
-                  navigation.navigate('Add')
-                }
+                onPress={() => navigation.navigate('Add')}
               >
                 <Text style={styles.chipText}>{q.name}</Text>
               </TouchableOpacity>

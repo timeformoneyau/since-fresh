@@ -12,9 +12,8 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, RepeatUnit } from '../types';
-import { addItem } from '../storage/items';
+import { createItem } from '../domain/items/service';
 import { todayString, formatDisplay, parseDate } from '../utils/dateUtils';
-import { scheduleItemNotifications } from '../notifications/scheduler';
 import { getSuggestion } from '../utils/suggestions';
 import { colours } from '../components/colours';
 import DatePickerModal from '../components/DatePickerModal';
@@ -23,10 +22,6 @@ import CategoryPicker from '../components/CategoryPicker';
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Add'>;
 
 const REPEAT_UNITS: RepeatUnit[] = ['days', 'weeks', 'months', 'years'];
-
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2);
-}
 
 export default function AddItemScreen() {
   const navigation = useNavigation<Nav>();
@@ -66,19 +61,14 @@ export default function AddItemScreen() {
     const rv = repeatValue ? parseInt(repeatValue, 10) : null;
     const hasRepeat = rv !== null && rv > 0;
 
-    const item = {
-      id: generateId(),
+    await createItem({
       name: trimmed,
       category,
       lastDoneDate,
       repeatValue: hasRepeat ? rv : null,
       repeatUnit: hasRepeat ? repeatUnit : null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    });
 
-    await addItem(item);
-    await scheduleItemNotifications(item);
     navigation.goBack();
   }
 

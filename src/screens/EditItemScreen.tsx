@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -13,12 +13,8 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, RepeatUnit } from '../types';
-import { loadItems, updateItem, deleteItem } from '../storage/items';
+import { getDerivedItemById, updateItem, deleteItem } from '../domain/items/service';
 import { formatDisplay, parseDate, todayString } from '../utils/dateUtils';
-import {
-  scheduleItemNotifications,
-  cancelItemNotifications,
-} from '../notifications/scheduler';
 import { colours } from '../components/colours';
 import DatePickerModal from '../components/DatePickerModal';
 import CategoryPicker from '../components/CategoryPicker';
@@ -44,14 +40,13 @@ export default function EditItemScreen() {
 
   useEffect(() => {
     (async () => {
-      const items = await loadItems();
-      const item = items.find((i) => i.id === itemId);
-      if (!item) { navigation.goBack(); return; }
-      setName(item.name);
-      setCategory(item.category);
-      setLastDoneDate(item.lastDoneDate);
-      setRepeatValue(item.repeatValue ? String(item.repeatValue) : '');
-      setRepeatUnit(item.repeatUnit ?? 'months');
+      const derived = await getDerivedItemById(itemId);
+      if (!derived) { navigation.goBack(); return; }
+      setName(derived.name);
+      setCategory(derived.category);
+      setLastDoneDate(derived.lastDoneDate);
+      setRepeatValue(derived.repeatValue ? String(derived.repeatValue) : '');
+      setRepeatUnit(derived.repeatUnit ?? 'months');
       setLoading(false);
     })();
   }, [itemId]);
@@ -61,24 +56,16 @@ export default function EditItemScreen() {
     if (!trimmed) return;
 
     const rv = repeatValue ? parseInt(repeatValue, 10) : null;
-    const ru = rv && rv > 0 ? repeatUnit : null;
+    const hasRepeat = rv !== null && rv > 0;
 
-    const items = await loadItems();
-    const existing = items.find((i) => i.id === itemId);
-    if (!existing) return;
-
-    const updated = {
-      ...existing,
+    await updateItem(itemId, {
       name: trimmed,
       category,
       lastDoneDate,
-      repeatValue: rv && rv > 0 ? rv : null,
-      repeatUnit: ru,
-      updatedAt: new Date().toISOString(),
-    };
+      repeatValue: hasRepeat ? rv : null,
+      repeatUnit: hasRepeat ? repeatUnit : null,
+    });
 
-    await updateItem(updated);
-    await scheduleItemNotifications(updated);
     navigation.goBack();
   }
 
@@ -92,7 +79,6 @@ export default function EditItemScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await cancelItemNotifications(itemId);
             await deleteItem(itemId);
             navigation.goBack();
           },
