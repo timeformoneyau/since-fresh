@@ -87,11 +87,11 @@ export function secondaryLine(status: ItemStatus): string {
 
   switch (label) {
     case 'All good':
-      if (daysUntilDue === 1) return 'Due tomorrow';
-      return `Due in ${daysUntilDue} days`;
+      if (daysUntilDue === 1) return 'Tomorrow';
+      return `Next in ${daysUntilDue} days`;
     case 'Coming up':
-      if (daysUntilDue === 1) return 'Due tomorrow';
-      return `Due in ${daysUntilDue} days`;
+      if (daysUntilDue === 1) return 'Tomorrow';
+      return `Next in ${daysUntilDue} days`;
     case 'About now':
       if (daysUntilDue === 0) return 'Due today';
       if (daysUntilDue === -1) return 'Overdue by 1 day';

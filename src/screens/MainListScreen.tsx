@@ -14,6 +14,7 @@ import { SinceItem, RootStackParamList } from '../types';
 import { DerivedItem } from '../domain/items/types';
 import { getDerivedItems, markItemDone, deleteItem } from '../domain/items/service';
 import ItemCard from '../components/ItemCard';
+import SystemStatus from '../components/SystemStatus';
 import { colours } from '../components/colours';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
@@ -103,6 +104,8 @@ export default function MainListScreen() {
           <Text style={styles.addBtnText}>＋</Text>
         </TouchableOpacity>
       </View>
+
+      <SystemStatus items={items} />
 
       <FlatList
         data={items}
@@ -223,7 +226,6 @@ const styles = StyleSheet.create({
   },
 
   list: {
-    paddingTop: 8,
     paddingBottom: 32,
   },
 });

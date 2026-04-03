@@ -27,7 +27,7 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete }: Props) 
 
   const translateX = useRef(new Animated.Value(0)).current;
   const SWIPE_THRESHOLD = 80;
-  const REVEAL_WIDTH = 130; // width of actions behind
+  const REVEAL_WIDTH = 130;
 
   const panResponder = useRef(
     PanResponder.create({
@@ -75,14 +75,14 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete }: Props) 
 
   const sinceText =
     daysSince === 0
-      ? "Done today"
+      ? 'Done today'
       : daysSince === 1
-      ? "You haven't done this in 1 day"
-      : `You haven't done this in ${daysSince} days`;
+      ? 'Last done yesterday'
+      : `Last done ${daysSince} days ago`;
 
   return (
     <View style={styles.container}>
-      {/* Swipe action buttons revealed behind */}
+      {/* Swipe actions */}
       <View style={styles.actionsRow}>
         <TouchableOpacity
           style={[styles.actionBtn, styles.editBtn]}
@@ -98,12 +98,12 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete }: Props) 
         </TouchableOpacity>
       </View>
 
-      {/* Main card face */}
+      {/* Row */}
       <Animated.View
-        style={[styles.card, { transform: [{ translateX }] }]}
+        style={[styles.row, { transform: [{ translateX }] }]}
         {...panResponder.panHandlers}
       >
-        {/* Status accent bar */}
+        {/* Left state indicator */}
         <View style={[styles.accentBar, { backgroundColor: accent }]} />
 
         <View style={styles.content}>
@@ -112,7 +112,7 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete }: Props) 
             <TouchableOpacity
               style={styles.doneBtn}
               onPress={() => onMarkDone(item)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={styles.doneBtnText}>Done</Text>
             </TouchableOpacity>
@@ -120,16 +120,15 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete }: Props) 
 
           <Text style={styles.sinceText}>{sinceText}</Text>
 
-          <View style={styles.bottomRow}>
-            {label !== null ? (
-              <>
-                <Text style={[styles.statusLabel, { color: accent }]}>{label}</Text>
-                <Text style={[styles.secondaryText, { marginLeft: 6 }]}>{secondary}</Text>
-              </>
-            ) : (
-              <Text style={styles.secondaryText}>Tracked only</Text>
-            )}
-          </View>
+          {label !== null ? (
+            <Text style={styles.statusText}>
+              <Text style={{ color: accent }}>{label}</Text>
+              <Text style={styles.dot}>{'  ·  '}</Text>
+              <Text>{secondary}</Text>
+            </Text>
+          ) : (
+            <Text style={styles.statusText}>Tracked only</Text>
+          )}
         </View>
       </Animated.View>
     </View>
@@ -138,9 +137,6 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete }: Props) 
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    borderRadius: 12,
     overflow: 'hidden',
   },
   actionsRow: {
@@ -158,39 +154,31 @@ const styles = StyleSheet.create({
   },
   deleteBtn: {
     backgroundColor: colours.destructive,
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
   },
   actionText: {
     color: '#fff',
     fontSize: 13,
     fontWeight: '600',
   },
-  card: {
-    backgroundColor: colours.surface,
-    borderRadius: 12,
+  row: {
     flexDirection: 'row',
-    overflow: 'hidden',
-    // subtle shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: colours.background,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colours.border,
   },
   accentBar: {
     width: 3,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 14,
   },
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
+    alignItems: 'flex-start',
+    marginBottom: 3,
   },
   name: {
     fontSize: 16,
@@ -200,33 +188,24 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   doneBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: '#F0F0EE',
-    borderRadius: 6,
+    paddingTop: 1,
   },
   doneBtnText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: colours.textSecondary,
-    letterSpacing: 0.2,
+    fontWeight: '500',
+    color: colours.textMuted,
+    letterSpacing: 0.1,
   },
   sinceText: {
     fontSize: 13,
     color: colours.textSecondary,
-    marginBottom: 6,
+    marginBottom: 5,
   },
-  bottomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-  secondaryText: {
+  statusText: {
     fontSize: 12,
     color: colours.textMuted,
+  },
+  dot: {
+    color: colours.border,
   },
 });
