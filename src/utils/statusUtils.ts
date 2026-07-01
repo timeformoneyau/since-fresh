@@ -5,10 +5,35 @@ import {
   getDaysUntilDue,
   intervalToDays,
   comingUpThreshold,
+  parseDate,
 } from './dateUtils';
+
+/** Shared label assignment once a due date + "coming up" threshold are known. */
+function labelForDaysUntilDue(daysUntilDue: number, threshold: number): StatusLabel {
+  if (daysUntilDue > threshold) return 'All good';
+  if (daysUntilDue > 0) return 'Coming up';
+  if (daysUntilDue >= -2) return 'About now';
+  if (daysUntilDue >= -14) return "It's been a while";
+  if (daysUntilDue >= -45) return 'Getting overdue';
+  return 'Long overdue';
+}
+
+// Food expiry dates are short shelf-life by nature — a short, fixed
+// "coming up" window reads better than one derived from a repeat interval
+// that doesn't exist for these items.
+const EXPIRY_COMING_UP_THRESHOLD_DAYS = 3;
 
 export function computeItemStatus(item: SinceItem): ItemStatus {
   const daysSince = getDaysSince(item.lastDoneDate);
+
+  // A scanned expiry date is the due date directly — it takes priority over
+  // lastDoneDate + repeat interval.
+  if (item.expiryDate) {
+    const nextDueDate = parseDate(item.expiryDate);
+    const daysUntilDue = getDaysUntilDue(nextDueDate);
+    const label = labelForDaysUntilDue(daysUntilDue, EXPIRY_COMING_UP_THRESHOLD_DAYS);
+    return { label, daysSince, daysUntilDue, nextDueDate };
+  }
 
   if (item.repeatValue === null || item.repeatUnit === null) {
     return { label: null, daysSince, daysUntilDue: null, nextDueDate: null };
@@ -18,21 +43,7 @@ export function computeItemStatus(item: SinceItem): ItemStatus {
   const daysUntilDue = getDaysUntilDue(nextDueDate);
   const approxInterval = intervalToDays(item.repeatValue, item.repeatUnit);
   const threshold = comingUpThreshold(approxInterval);
-
-  let label: StatusLabel;
-  if (daysUntilDue > threshold) {
-    label = 'All good';
-  } else if (daysUntilDue > 0) {
-    label = 'Coming up';
-  } else if (daysUntilDue >= -2) {
-    label = 'About now';
-  } else if (daysUntilDue >= -14) {
-    label = "It's been a while";
-  } else if (daysUntilDue >= -45) {
-    label = 'Getting overdue';
-  } else {
-    label = 'Long overdue';
-  }
+  const label = labelForDaysUntilDue(daysUntilDue, threshold);
 
   return { label, daysSince, daysUntilDue, nextDueDate };
 }

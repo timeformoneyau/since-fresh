@@ -56,7 +56,19 @@ export function parseAndMigrate(raw: string): SinceItem[] {
     return [];
   }
 
-  return candidates.filter(isValidItem);
+  return candidates.filter(isValidItem).map(backfillExpiryFields);
+}
+
+/**
+ * Items persisted before expiryDate/source existed won't have those keys.
+ * Backfill them so derive.ts can rely on the fields always being present.
+ */
+function backfillExpiryFields(item: SinceItem): SinceItem {
+  return {
+    ...item,
+    expiryDate: item.expiryDate ?? null,
+    source: item.source ?? 'manual',
+  };
 }
 
 export function toEnvelope(items: SinceItem[]): string {

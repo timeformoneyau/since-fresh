@@ -43,6 +43,8 @@ export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
     lastDoneDate: input.lastDoneDate,
     repeatValue: input.repeatValue,
     repeatUnit: input.repeatUnit,
+    expiryDate: input.expiryDate ?? null,
+    source: input.source ?? 'manual',
     createdAt: now,
     updatedAt: now,
   };
@@ -71,9 +73,19 @@ export async function updateItem(itemId: string, updates: UpdateItemInput): Prom
   return deriveItem(updated);
 }
 
-/** Mark an item as done today (or on a specific date). */
+/**
+ * Mark an item as done today (or on a specific date).
+ *
+ * If the item's due date came from a scanned expiry photo, clear it back to
+ * manual: the next instance of the food item needs a fresh scan (or a
+ * manually-set repeat interval) rather than reusing a now-stale expiry date.
+ */
 export async function markItemDone(itemId: string, doneDate?: string): Promise<DerivedItem> {
-  return updateItem(itemId, { lastDoneDate: doneDate ?? todayString() });
+  return updateItem(itemId, {
+    lastDoneDate: doneDate ?? todayString(),
+    expiryDate: null,
+    source: 'manual',
+  });
 }
 
 /**

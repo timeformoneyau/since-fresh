@@ -65,12 +65,20 @@ export default function MainListScreen() {
             Track the things you don't do often enough and we'll keep count for you.
           </Text>
 
-          <TouchableOpacity
-            style={styles.primaryCTA}
-            onPress={() => navigation.navigate('Add')}
-          >
-            <Text style={styles.primaryCTAText}>Add something</Text>
-          </TouchableOpacity>
+          <View style={styles.ctaRow}>
+            <TouchableOpacity
+              style={styles.primaryCTA}
+              onPress={() => navigation.navigate('Add')}
+            >
+              <Text style={styles.primaryCTAText}>Add something</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.secondaryCTA}
+              onPress={() => navigation.navigate('ScanFood')}
+            >
+              <Text style={styles.secondaryCTAText}>📷 Scan food</Text>
+            </TouchableOpacity>
+          </View>
 
           <Text style={styles.quickStartLabel}>Quick start</Text>
           <View style={styles.quickStartRow}>
@@ -96,13 +104,22 @@ export default function MainListScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Since</Text>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => navigation.navigate('Add')}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text style={styles.addBtnText}>＋</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.scanBtn}
+            onPress={() => navigation.navigate('ScanFood')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.scanBtnText}>📷</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => navigation.navigate('Add')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.addBtnText}>＋</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <SystemStatus items={items} />
@@ -156,16 +173,34 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 40,
   },
+  ctaRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 40,
+  },
   primaryCTA: {
     backgroundColor: colours.textPrimary,
     paddingVertical: 14,
     paddingHorizontal: 28,
     borderRadius: 10,
     alignSelf: 'flex-start',
-    marginBottom: 40,
   },
   primaryCTAText: {
     color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  secondaryCTA: {
+    backgroundColor: colours.surface,
+    borderWidth: 1,
+    borderColor: colours.border,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+  },
+  secondaryCTAText: {
+    color: colours.textPrimary,
     fontSize: 15,
     fontWeight: '600',
   },
@@ -209,6 +244,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colours.textPrimary,
     letterSpacing: -0.5,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  scanBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colours.surface,
+    borderWidth: 1,
+    borderColor: colours.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scanBtnText: {
+    fontSize: 16,
   },
   addBtn: {
     width: 36,

@@ -9,9 +9,9 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList, RepeatUnit } from '../types';
+import { RootStackParamList, RepeatUnit, ItemSource } from '../types';
 import { createItem } from '../domain/items/service';
 import { todayString, formatDisplay, parseDate } from '../utils/dateUtils';
 import { getSuggestion } from '../utils/suggestions';
@@ -20,27 +20,34 @@ import DatePickerModal from '../components/DatePickerModal';
 import CategoryPicker from '../components/CategoryPicker';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Add'>;
+type AddRoute = RouteProp<RootStackParamList, 'Add'>;
 
 const REPEAT_UNITS: RepeatUnit[] = ['days', 'weeks', 'months', 'years'];
 
 export default function AddItemScreen() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<AddRoute>();
+  const prefill = route.params?.prefill;
   const nameRef = useRef<TextInput>(null);
 
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState('Other');
+  const [name, setName] = useState(prefill?.name ?? '');
+  const [category, setCategory] = useState(prefill?.category ?? 'Other');
   const [lastDoneDate, setLastDoneDate] = useState(todayString());
   const [repeatValue, setRepeatValue] = useState('');
   const [repeatUnit, setRepeatUnit] = useState<RepeatUnit>('months');
+  const [expiryDate, setExpiryDate] = useState<string | null>(prefill?.expiryDate ?? null);
+  const [source] = useState<ItemSource>(prefill?.source ?? 'manual');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showExpiryPicker, setShowExpiryPicker] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [suggestion, setSuggestion] = useState<{ repeatValue: number; repeatUnit: RepeatUnit } | null>(null);
   const [suggestionApplied, setSuggestionApplied] = useState(false);
 
   useEffect(() => {
+    if (prefill) return; // don't steal focus from a prefilled, ready-to-review form
     const timer = setTimeout(() => nameRef.current?.focus(), 100);
     return () => clearTimeout(timer);
-  }, []);
+  }, [prefill]);
 
   useEffect(() => {
     setSuggestion(getSuggestion(name));
@@ -65,8 +72,12 @@ export default function AddItemScreen() {
       name: trimmed,
       category,
       lastDoneDate,
-      repeatValue: hasRepeat ? rv : null,
-      repeatUnit: hasRepeat ? repeatUnit : null,
+      // A scanned expiry date drives the due date directly, so the
+      // repeat-interval fields are ignored in that case.
+      repeatValue: expiryDate ? null : hasRepeat ? rv : null,
+      repeatUnit: expiryDate ? null : hasRepeat ? repeatUnit : null,
+      expiryDate,
+      source,
     });
 
     navigation.goBack();
@@ -98,8 +109,24 @@ export default function AddItemScreen() {
           />
         </View>
 
+        {/* Scanned-photo banner */}
+        {prefill && (
+          <View
+            style={[
+              styles.scanBanner,
+              prefill.lowConfidence && styles.scanBannerWarn,
+            ]}
+          >
+            <Text style={styles.scanBannerText}>
+              {prefill.lowConfidence
+                ? 'Read from the photo — low confidence, please check the name and date.'
+                : 'Reminder based on the date read from the photo — edit if wrong.'}
+            </Text>
+          </View>
+        )}
+
         {/* Suggestion banner */}
-        {suggestion && !suggestionApplied && repeatValue === '' && (
+        {!expiryDate && suggestion && !suggestionApplied && repeatValue === '' && (
           <TouchableOpacity style={styles.suggestionBanner} onPress={applySuggestion}>
             <Text style={styles.suggestionText}>
               Suggested: every {suggestion.repeatValue} {suggestion.repeatUnit}
@@ -132,32 +159,45 @@ export default function AddItemScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Repeat every */}
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Repeat every</Text>
-          <TextInput
-            style={styles.repeatInput}
-            placeholder="—"
-            placeholderTextColor={colours.textMuted}
-            value={repeatValue}
-            onChangeText={(t) => setRepeatValue(t.replace(/[^0-9]/g, ''))}
-            keyboardType="number-pad"
-            maxLength={4}
-          />
-          <View style={styles.unitRow}>
-            {REPEAT_UNITS.map((u) => (
-              <TouchableOpacity
-                key={u}
-                style={[styles.unitBtn, repeatUnit === u && styles.unitBtnActive]}
-                onPress={() => setRepeatUnit(u)}
-              >
-                <Text style={[styles.unitBtnText, repeatUnit === u && styles.unitBtnTextActive]}>
-                  {u}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {expiryDate ? (
+          /* Expiry date (from photo scan) replaces the repeat-interval controls */
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Use by</Text>
+            <TouchableOpacity style={styles.rowButton} onPress={() => setShowExpiryPicker(true)}>
+              <Text style={styles.rowButtonText}>{formatDisplay(parseDate(expiryDate))}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setExpiryDate(null)}>
+              <Text style={styles.switchToManualText}>Set a repeat interval instead</Text>
+            </TouchableOpacity>
           </View>
-        </View>
+        ) : (
+          /* Repeat every */
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Repeat every</Text>
+            <TextInput
+              style={styles.repeatInput}
+              placeholder="—"
+              placeholderTextColor={colours.textMuted}
+              value={repeatValue}
+              onChangeText={(t) => setRepeatValue(t.replace(/[^0-9]/g, ''))}
+              keyboardType="number-pad"
+              maxLength={4}
+            />
+            <View style={styles.unitRow}>
+              {REPEAT_UNITS.map((u) => (
+                <TouchableOpacity
+                  key={u}
+                  style={[styles.unitBtn, repeatUnit === u && styles.unitBtnActive]}
+                  onPress={() => setRepeatUnit(u)}
+                >
+                  <Text style={[styles.unitBtnText, repeatUnit === u && styles.unitBtnTextActive]}>
+                    {u}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* Save */}
         <TouchableOpacity
@@ -174,6 +214,14 @@ export default function AddItemScreen() {
           value={lastDoneDate}
           onConfirm={(d) => { setLastDoneDate(d); setShowDatePicker(false); }}
           onCancel={() => setShowDatePicker(false)}
+        />
+      )}
+
+      {showExpiryPicker && (
+        <DatePickerModal
+          value={expiryDate ?? todayString()}
+          onConfirm={(d) => { setExpiryDate(d); setShowExpiryPicker(false); }}
+          onCancel={() => setShowExpiryPicker(false)}
         />
       )}
 
@@ -216,6 +264,26 @@ const styles = StyleSheet.create({
   },
   suggestionText: { fontSize: 13, color: '#7A5C2A' },
   suggestionApply: { fontSize: 13, fontWeight: '600', color: '#C8842A' },
+  scanBanner: {
+    backgroundColor: '#F1F5F1',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#D7E5D7',
+  },
+  scanBannerWarn: {
+    backgroundColor: '#FFF8EE',
+    borderColor: '#F0D9B0',
+  },
+  scanBannerText: { fontSize: 13, color: colours.textSecondary, lineHeight: 18 },
+  switchToManualText: {
+    fontSize: 13,
+    color: colours.textSecondary,
+    marginTop: 8,
+    textDecorationLine: 'underline',
+  },
   fieldGroup: { marginBottom: 20 },
   label: {
     fontSize: 11,

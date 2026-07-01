@@ -1,5 +1,7 @@
 export type RepeatUnit = 'days' | 'weeks' | 'months' | 'years';
 
+export type ItemSource = 'manual' | 'photo';
+
 export interface SinceItem {
   id: string;
   name: string;
@@ -7,6 +9,10 @@ export interface SinceItem {
   lastDoneDate: string; // ISO date string (YYYY-MM-DD)
   repeatValue: number | null;
   repeatUnit: RepeatUnit | null;
+  // When set, this is the due date directly (e.g. a food expiry date read
+  // from a photo) and takes priority over lastDoneDate + repeat interval.
+  expiryDate: string | null; // ISO date string (YYYY-MM-DD)
+  source: ItemSource;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,11 +39,22 @@ export const DEFAULT_CATEGORIES = [
   'Family',
   'Admin',
   'Purchases',
+  'Food',
   'Other',
 ] as const;
 
+/** Prefill passed from ScanFoodScreen into AddItemScreen after a successful scan. */
+export interface AddScreenPrefill {
+  name: string;
+  category: string;
+  expiryDate: string | null;
+  source: ItemSource;
+  lowConfidence: boolean;
+}
+
 export type RootStackParamList = {
   Main: undefined;
-  Add: undefined;
+  Add: { prefill?: AddScreenPrefill } | undefined;
   Edit: { itemId: string };
+  ScanFood: undefined;
 };

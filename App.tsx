@@ -8,6 +8,7 @@ import { colours } from './src/components/colours';
 import MainListScreen from './src/screens/MainListScreen';
 import AddItemScreen from './src/screens/AddItemScreen';
 import EditItemScreen from './src/screens/EditItemScreen';
+import ScanFoodScreen from './src/screens/ScanFoodScreen';
 import { requestNotificationPermissions, rescheduleAllNotifications } from './src/notifications/scheduler';
 import { loadItems } from './src/domain/items/storage';
 
@@ -46,6 +47,11 @@ export default function App() {
           <Stack.Screen name="Main" component={MainListScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Add" component={AddItemScreen} options={{ title: 'Track something' }} />
           <Stack.Screen name="Edit" component={EditItemScreen} options={{ title: 'Edit' }} />
+          <Stack.Screen
+            name="ScanFood"
+            component={ScanFoodScreen}
+            options={{ title: 'Scan food', headerShown: false }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
