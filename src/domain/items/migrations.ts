@@ -1,6 +1,15 @@
-import { SinceItem } from '../../types';
+import { SinceItem, CompletionEvent } from '../../types';
 
-export const STORAGE_VERSION = 1;
+/**
+ * v1 — { version, items } envelope with expiryDate/source.
+ * v2 — adds the `history` completion log (repeat-mode items only).
+ *
+ * Note: the pre-consolidation `since` codebase also wrote version 1, with a
+ * different shape (history but no expiryDate/source). Version number alone
+ * therefore cannot identify a payload, so hydrate() discriminates on field
+ * presence rather than trusting the envelope version.
+ */
+export const STORAGE_VERSION = 2;
 
 interface StorageEnvelope {
   version: number;
@@ -56,17 +65,38 @@ export function parseAndMigrate(raw: string): SinceItem[] {
     return [];
   }
 
-  return candidates.filter(isValidItem).map(backfillExpiryFields);
+  return candidates.filter(isValidItem).map(hydrate);
 }
 
 /**
- * Items persisted before expiryDate/source existed won't have those keys.
- * Backfill them so derive.ts can rely on the fields always being present.
+ * Bring a stored item up to the current SinceItem shape.
+ *
+ * Handles payloads written by any prior version, including those from the
+ * legacy `since` codebase, by filling in whichever fields are absent:
+ *
+ *   - expiryDate / source (added in v1 here, never existed in `since`)
+ *   - history (added in v2 here, existed in `since` from the start)
+ *
+ * History is seeded from lastDoneDate for repeat-mode items so an existing
+ * user sees at least one entry. Expiry-mode items get an empty history by
+ * design — food is replaced by the next scan, not logged.
  */
-function backfillExpiryFields(item: SinceItem): SinceItem {
+function hydrate(item: SinceItem): SinceItem {
+  const expiryDate = item.expiryDate ?? null;
+
+  let history: CompletionEvent[];
+  if (Array.isArray(item.history)) {
+    history = item.history;
+  } else if (expiryDate) {
+    history = [];
+  } else {
+    history = [{ id: `${item.id}_seed`, date: item.lastDoneDate }];
+  }
+
   return {
     ...item,
-    expiryDate: item.expiryDate ?? null,
+    history,
+    expiryDate,
     source: item.source ?? 'manual',
   };
 }

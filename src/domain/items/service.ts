@@ -5,7 +5,7 @@
  * All persistence and notification coordination lives here.
  */
 
-import { SinceItem } from '../../types';
+import { SinceItem, CompletionEvent } from '../../types';
 import { CreateItemInput, UpdateItemInput, DerivedItem } from './types';
 import { loadItems, saveItems } from './storage';
 import { deriveItem } from './derive';
@@ -33,17 +33,29 @@ export async function getDerivedItemById(itemId: string): Promise<DerivedItem | 
   return item ? deriveItem(item) : null;
 }
 
-/** Create a new item, persist it, and schedule its notifications. */
+/**
+ * Create a new item, persist it, and schedule its notifications.
+ *
+ * Repeat-mode items are seeded with an initial completion event so the log
+ * starts from the date the user says it was last done. Expiry-mode items
+ * (scanned food) start with an empty history — they are replaced by the next
+ * scan rather than accumulating completions.
+ */
 export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
   const now = new Date().toISOString();
+  const expiryDate = input.expiryDate ?? null;
+  const history: CompletionEvent[] = expiryDate
+    ? []
+    : [{ id: generateId(), date: input.lastDoneDate }];
   const item: SinceItem = {
     id: generateId(),
     name: input.name,
     category: input.category,
     lastDoneDate: input.lastDoneDate,
+    history,
     repeatValue: input.repeatValue,
     repeatUnit: input.repeatUnit,
-    expiryDate: input.expiryDate ?? null,
+    expiryDate,
     source: input.source ?? 'manual',
     createdAt: now,
     updatedAt: now,
@@ -64,6 +76,9 @@ export async function updateItem(itemId: string, updates: UpdateItemInput): Prom
     ...existing,
     ...updates,
     id: existing.id,
+    // History is append-only and owned by markItemDone — metadata edits
+    // must never rewrite the completion log.
+    history: existing.history,
     createdAt: existing.createdAt,
     updatedAt: new Date().toISOString(),
   };
@@ -76,16 +91,38 @@ export async function updateItem(itemId: string, updates: UpdateItemInput): Prom
 /**
  * Mark an item as done today (or on a specific date).
  *
- * If the item's due date came from a scanned expiry photo, clear it back to
- * manual: the next instance of the food item needs a fresh scan (or a
- * manually-set repeat interval) rather than reusing a now-stale expiry date.
+ * Two distinct behaviours, decided by the item's state *before* the mutation:
+ *
+ *   Expiry-mode (a scanned food item): clear the expiry back to manual — the
+ *   next instance of the food needs a fresh scan rather than reusing a stale
+ *   date — and do NOT append to history. A scan replaces the previous state
+ *   rather than adding to it, so food carries no completion log.
+ *
+ *   Repeat-mode (everything else): prepend a completion event. This is the
+ *   only path that grows the history log.
  */
 export async function markItemDone(itemId: string, doneDate?: string): Promise<DerivedItem> {
-  return updateItem(itemId, {
-    lastDoneDate: doneDate ?? todayString(),
+  const date = doneDate ?? todayString();
+  const items = await loadItems();
+  const existing = items.find((i) => i.id === itemId);
+  if (!existing) throw new Error(`Item not found: ${itemId}`);
+
+  const wasExpiryMode = existing.expiryDate !== null;
+
+  const updated: SinceItem = {
+    ...existing,
+    lastDoneDate: date,
+    history: wasExpiryMode
+      ? existing.history
+      : [{ id: generateId(), date }, ...existing.history],
     expiryDate: null,
     source: 'manual',
-  });
+    updatedAt: new Date().toISOString(),
+  };
+
+  await saveItems(items.map((i) => (i.id === itemId ? updated : i)));
+  await scheduleItemNotifications(updated);
+  return deriveItem(updated);
 }
 
 /**
