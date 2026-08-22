@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Since",
-    "slug": "since",
+    "slug": "since-fresh",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -43,7 +43,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "97642b6b-bcea-426d-95bc-354aae8e6feb"
+        "projectId": "3c35d81c-5a3e-4fd8-99a9-e6c95441f721"
       },
       "expiryApiUrl": "https://since-proxy.vercel.app/api/parse-expiry",
       "supabaseUrl": "https://iiuxkzhbefiqckekjntl.supabase.co",
