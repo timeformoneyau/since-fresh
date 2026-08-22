@@ -14,6 +14,8 @@ import { SinceItem, RootStackParamList, DEFAULT_CATEGORIES } from '../types';
 import { DerivedItem } from '../domain/items/types';
 import { getDerivedItems, markItemDone, deleteItem } from '../domain/items/service';
 import { sortItems, computeItemStatus, statusSortOrder } from '../utils/statusUtils';
+import { isCloudSyncConfigured } from '../lib/supabase';
+import { syncNow } from '../domain/sync/engine';
 import ItemCard from '../components/ItemCard';
 import SystemStatus from '../components/SystemStatus';
 import { colours } from '../components/colours';
@@ -74,6 +76,12 @@ export default function MainListScreen() {
   useFocusEffect(
     useCallback(() => {
       refresh();
+      // Opportunistic sync: reconcile with the cloud whenever the list comes
+      // back into view, then re-render if anything changed. No-ops when
+      // signed out or unconfigured.
+      void syncNow().then((outcome) => {
+        if (outcome === 'synced') refresh();
+      });
     }, [refresh]),
   );
 
@@ -89,6 +97,10 @@ export default function MainListScreen() {
 
   function handleEdit(item: SinceItem) {
     navigation.navigate('Edit', { itemId: item.id });
+  }
+
+  function handleOpenDetail(item: SinceItem) {
+    navigation.navigate('Detail', { itemId: item.id });
   }
 
   if (items.length === 0) {
@@ -142,6 +154,17 @@ export default function MainListScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Since</Text>
         <View style={styles.headerActions}>
+          {isCloudSyncConfigured() && (
+            <TouchableOpacity
+              style={styles.accountBtn}
+              onPress={() => navigation.navigate('Account')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel="Account"
+              accessibilityRole="button"
+            >
+              <Text style={styles.accountBtnText}>Account</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.scanBtn}
             onPress={() => navigation.navigate('ScanFood')}
@@ -174,6 +197,7 @@ export default function MainListScreen() {
             onMarkDone={handleMarkDone}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            onPress={item.expiryDate ? undefined : handleOpenDetail}
           />
         )}
         renderSectionHeader={({ section }) => (
@@ -326,6 +350,21 @@ const styles = StyleSheet.create({
 
   list: {
     paddingBottom: 32,
+  },
+  accountBtn: {
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: colours.surface,
+    borderWidth: 1,
+    borderColor: colours.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  accountBtnText: {
+    fontSize: 13,
+    color: colours.textSecondary,
+    fontWeight: '500',
   },
   sectionHeader: {
     paddingHorizontal: 20,

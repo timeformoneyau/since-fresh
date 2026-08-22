@@ -68,9 +68,20 @@ export interface AddScreenPrefill {
   lowConfidence: boolean;
 }
 
+// Main app navigation
 export type RootStackParamList = {
   Main: undefined;
   Add: { prefill?: AddScreenPrefill } | undefined;
   Edit: { itemId: string };
+  Detail: { itemId: string };
   ScanFood: undefined;
+  Account: undefined;
+  ChangePassword: undefined;
+};
+
+// Auth flow navigation
+export type AuthStackParamList = {
+  SignIn: undefined;
+  SignUp: undefined;
+  ForgotPassword: undefined;
 };

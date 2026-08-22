@@ -17,9 +17,11 @@ interface Props {
   onMarkDone: (item: SinceItem) => void;
   onEdit: (item: SinceItem) => void;
   onDelete: (item: SinceItem) => void;
+  /** Opens the item's completion history. Omitted for expiry-mode items. */
+  onPress?: (item: SinceItem) => void;
 }
 
-export default function ItemCard({ item, onMarkDone, onEdit, onDelete }: Props) {
+export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }: Props) {
   const status = computeItemStatus(item);
   const { label, daysSince } = status;
   const secondary = secondaryLine(status);
@@ -110,9 +112,23 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete }: Props) 
         {/* Left state indicator */}
         <View style={[styles.accentBar, { backgroundColor: accent }]} />
 
-        <View style={styles.content}>
+        <View
+          style={styles.content}
+          onStartShouldSetResponder={() => false}
+        >
           <View style={styles.topRow}>
-            <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+            {onPress ? (
+              <TouchableOpacity
+                style={styles.nameWrap}
+                onPress={() => onPress(item)}
+                accessibilityLabel={`${item.name} history`}
+                accessibilityRole="button"
+              >
+                <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+            )}
             <TouchableOpacity
               style={styles.doneBtn}
               onPress={() => onMarkDone(item)}
@@ -185,6 +201,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 3,
+  },
+  nameWrap: {
+    flex: 1,
+    marginRight: 8,
   },
   name: {
     fontSize: 16,
