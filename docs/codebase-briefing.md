@@ -27,11 +27,14 @@ expiry / use-by date off the packaging, and that date drives the reminder direct
 
 | Repo | Path | Role |
 |---|---|---|
-| **since-fresh** | this repo | The Expo/RN mobile app. 100% client-side, local storage, no accounts. |
+| **since-fresh** | this repo | The Expo/RN mobile app. Local-first storage; optional Supabase account + background sync. |
 | **since-proxy** | `../since-proxy` (GitHub `timeformoneyau/since-proxy`) | Minimal Next.js/Vercel backend with one route, `POST /api/parse-expiry`. Exists *only* so the Anthropic API key never ships in the mobile bundle. No database, no file storage. |
 
-There is also an older `timeformoneyau/since` repo — the original Expo SDK 51 version this project
-is a rebuild of. `since-fresh` is the active codebase.
+There is also an older `timeformoneyau/since` repo — the original version this project is a
+rebuild of. Its auth, cloud sync, category grouping and completion-history work was consolidated
+into `since-fresh` in August 2026; `since-fresh` is the surviving codebase. Note `since` still
+holds an unmerged `sdk51-clean` branch (event logging, OCR, Hedera proofs) that was deliberately
+deferred, not ported.
 
 ---
 
@@ -39,8 +42,10 @@ is a rebuild of. `since-fresh` is the active codebase.
 
 - **Expo SDK 54**, React Native 0.81, React 19, new architecture enabled.
 - **React Navigation** (native-stack) — 4 screens.
-- **AsyncStorage** for persistence (single key `@since_v1_items`). No backend, no auth, no
-  accounts — all data lives on-device.
+- **AsyncStorage** for persistence (single key `@since_v1_items`, storage version 2) — the source
+  of truth. Every write lands locally first and works offline.
+- **Supabase** (`@supabase/supabase-js`) for optional accounts + background sync. Absent
+  credentials means the app runs purely local-only, with no sign-in step.
 - **expo-notifications** for **local** (not push) reminders.
 - **date-fns** for all date math.
 - **expo-camera** + **expo-image-manipulator** for the food-scan capture.
@@ -58,11 +63,14 @@ is a rebuild of. `since-fresh` is the active codebase.
 type RepeatUnit = 'days' | 'weeks' | 'months' | 'years';
 type ItemSource = 'manual' | 'photo';
 
+interface CompletionEvent { id: string; date: string; }  // YYYY-MM-DD
+
 interface SinceItem {
   id: string;
   name: string;
   category: string;
   lastDoneDate: string;          // ISO YYYY-MM-DD
+  history: CompletionEvent[];    // newest first; repeat-mode items only
   repeatValue: number | null;    // null = "tracked only" (no reminders)
   repeatUnit: RepeatUnit | null;
   expiryDate: string | null;     // ISO; when set, IS the due date (overrides repeat)
@@ -108,9 +116,13 @@ This wording is central to the product's voice.
 
 ## 6. Screens & navigation (`App.tsx`)
 
-Stack routes: `Main`, `Add`, `Edit`, `ScanFood`.
+Two stacks. `AuthNavigator` (`SignIn`, `SignUp`, `ForgotPassword`) shows only when cloud sync is
+configured *and* nobody is signed in. Otherwise `AppNavigator`: `Main`, `Add`, `Edit`, `Detail`,
+`ScanFood`, `Account`, `ChangePassword`.
 
-- **Main** (`MainListScreen`) — sorted list of swipeable `ItemCard`s (swipe left → Edit / Delete;
+- **Main** (`MainListScreen`) — items grouped into per-category `SectionList` sections. Grouping
+  nests urgency sorting: sections are ordered by their most-urgent member, items stay
+  urgency-sorted within. Swipeable `ItemCard`s (swipe left → Edit / Delete;
   "Done" button marks done today). A one-line `SystemStatus` summary sits under the header
   ("All good. Nothing needs attention." / "A few things might need attention." …). Header has
   **＋** (add) and **📷** (scan food). Empty state shows the tagline, "Add something" /
@@ -220,13 +232,19 @@ go through `domain/items/service.ts`, the one place that keeps persistence and s
 - **`app.json` ships the shared secret** (`extra.expiryApiSecret`) in the bundle. By design — it
   only gates abuse of the Anthropic budget, not user data — but it is not a true secret. Rotate via
   Vercel + app.json if leaked.
-- **No accounts / sync / backup** — data is local to one device. A same-signed APK reinstall
-  preserves it; switching phones loses it.
+- **Sync is item-level last-write-wins.** Two devices editing different fields of the same item
+  inside one sync window will keep only the later edit. Fine for single-user; revisit if sharing
+  is added.
+- **Supabase credentials are not committed** — set `extra.supabaseUrl` / `extra.supabaseAnonKey`
+  in `app.json`. Until then the app is local-only. **The auth + sync path has not yet been
+  exercised against a live Supabase project.**
 - **No iOS path exercised** (Android package `com.anonymous.sincefresh`; EAS project configured).
 - **Real-world OCR accuracy unverified** on stamped-on-plastic dates — only clean printed labels
   tested so far.
 - **Suggestions are English keyword-only**, ~10 hardcoded rules.
 - **No dark mode.**
+- **Still no test framework.** The sync merge rules and the notification engine remain the
+  highest-value untested logic.
 
 ---
 
@@ -244,4 +262,5 @@ go through `domain/items/service.ts`, the one place that keeps persistence and s
 
 ---
 
-*Generated 2026-06-29. Pull directly from code — no assumptions.*
+*Generated 2026-06-29. Updated 2026-08-22 for the since/since-fresh consolidation.
+Pull directly from code — no assumptions.*
