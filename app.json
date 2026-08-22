@@ -47,8 +47,8 @@
       },
       "expiryApiUrl": "https://since-proxy.vercel.app/api/parse-expiry",
       "expiryApiSecret": "ca07f42e60105422dbf2c6880a2b0cd6bb383be64d155594522bc9a060f27967",
-      "supabaseUrl": "",
-      "supabaseAnonKey": ""
+      "supabaseUrl": "https://iiuxkzhbefiqckekjntl.supabase.co",
+      "supabaseAnonKey": "sb_publishable_ZWvQ_ccf76_fDd0MyLZ6Xg_rtt2_c2O"
     },
     "scheme": "since"
   }
