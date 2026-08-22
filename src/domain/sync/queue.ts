@@ -60,6 +60,24 @@ export async function enqueueDelete(id: string): Promise<void> {
   await saveQueue(q);
 }
 
+/**
+ * Retire only the operations that were actually pushed.
+ *
+ * Deliberately not a wholesale clear: a mutation made while a push is in
+ * flight enqueues during that window, and clearing everything would discard
+ * it with no retry. Removing by id leaves those entries queued for the next
+ * run.
+ */
+export async function removeFromQueue(ops: SyncQueue): Promise<void> {
+  const q = await loadQueue();
+  const doneUpserts = new Set(ops.upserts);
+  const doneDeletes = new Set(ops.deletes);
+  await saveQueue({
+    upserts: q.upserts.filter((id) => !doneUpserts.has(id)),
+    deletes: q.deletes.filter((id) => !doneDeletes.has(id)),
+  });
+}
+
 export async function clearQueue(): Promise<void> {
   await saveQueue({ ...EMPTY });
 }
