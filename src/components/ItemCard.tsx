@@ -87,12 +87,16 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete }: Props) 
         <TouchableOpacity
           style={[styles.actionBtn, styles.editBtn]}
           onPress={() => { closeSwipe(); onEdit(item); }}
+          accessibilityLabel={`Edit ${item.name}`}
+          accessibilityRole="button"
         >
           <Text style={styles.actionText}>Edit</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, styles.deleteBtn]}
           onPress={handleDelete}
+          accessibilityLabel={`Delete ${item.name}`}
+          accessibilityRole="button"
         >
           <Text style={styles.actionText}>Delete</Text>
         </TouchableOpacity>
@@ -113,6 +117,8 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete }: Props) 
               style={styles.doneBtn}
               onPress={() => onMarkDone(item)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityLabel={`Mark ${item.name} done`}
+              accessibilityRole="button"
             >
               <Text style={styles.doneBtnText}>Done</Text>
             </TouchableOpacity>

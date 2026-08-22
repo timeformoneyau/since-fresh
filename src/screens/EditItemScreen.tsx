@@ -34,7 +34,9 @@ export default function EditItemScreen() {
   const [lastDoneDate, setLastDoneDate] = useState(todayString());
   const [repeatValue, setRepeatValue] = useState('');
   const [repeatUnit, setRepeatUnit] = useState<RepeatUnit>('months');
+  const [expiryDate, setExpiryDate] = useState<string | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showExpiryPicker, setShowExpiryPicker] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -47,6 +49,7 @@ export default function EditItemScreen() {
       setLastDoneDate(derived.lastDoneDate);
       setRepeatValue(derived.repeatValue ? String(derived.repeatValue) : '');
       setRepeatUnit(derived.repeatUnit ?? 'months');
+      setExpiryDate(derived.expiryDate);
       setLoading(false);
     })();
   }, [itemId]);
@@ -62,8 +65,11 @@ export default function EditItemScreen() {
       name: trimmed,
       category,
       lastDoneDate,
-      repeatValue: hasRepeat ? rv : null,
-      repeatUnit: hasRepeat ? repeatUnit : null,
+      // An expiry date drives the due date directly, so the repeat-interval
+      // fields are ignored while one is set — mirrors AddItemScreen.
+      repeatValue: expiryDate ? null : hasRepeat ? rv : null,
+      repeatUnit: expiryDate ? null : hasRepeat ? repeatUnit : null,
+      expiryDate,
     });
 
     navigation.goBack();
@@ -137,7 +143,24 @@ export default function EditItemScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Repeat every */}
+        {expiryDate ? (
+          /* Use by (from a photo scan) replaces the repeat-interval controls */
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Use by</Text>
+            <TouchableOpacity
+              style={styles.rowButton}
+              onPress={() => setShowExpiryPicker(true)}
+            >
+              <Text style={styles.rowButtonText}>
+                {formatDisplay(parseDate(expiryDate))}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setExpiryDate(null)}>
+              <Text style={styles.switchToManualText}>Set a repeat interval instead</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+        /* Repeat every */
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Repeat every</Text>
           <View style={styles.repeatRow}>
@@ -173,6 +196,7 @@ export default function EditItemScreen() {
             </View>
           </View>
         </View>
+        )}
 
         {/* Save */}
         <TouchableOpacity
@@ -194,6 +218,14 @@ export default function EditItemScreen() {
           value={lastDoneDate}
           onConfirm={(d) => { setLastDoneDate(d); setShowDatePicker(false); }}
           onCancel={() => setShowDatePicker(false)}
+        />
+      )}
+
+      {showExpiryPicker && (
+        <DatePickerModal
+          value={expiryDate ?? todayString()}
+          onConfirm={(d) => { setExpiryDate(d); setShowExpiryPicker(false); }}
+          onCancel={() => setShowExpiryPicker(false)}
         />
       )}
 
@@ -239,6 +271,12 @@ const styles = StyleSheet.create({
     borderColor: colours.border,
   },
   rowButtonText: { fontSize: 15, color: colours.textPrimary },
+  switchToManualText: {
+    fontSize: 13,
+    color: colours.textSecondary,
+    marginTop: 8,
+    textDecorationLine: 'underline',
+  },
   repeatRow: { marginBottom: 8 },
   repeatInput: {
     paddingVertical: 12,

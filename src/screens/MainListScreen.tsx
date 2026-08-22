@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
-  FlatList,
+  SectionList,
   TouchableOpacity,
   StyleSheet,
   StatusBar,
@@ -10,14 +10,51 @@ import {
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SinceItem, RootStackParamList } from '../types';
+import { SinceItem, RootStackParamList, DEFAULT_CATEGORIES } from '../types';
 import { DerivedItem } from '../domain/items/types';
 import { getDerivedItems, markItemDone, deleteItem } from '../domain/items/service';
+import { sortItems, computeItemStatus, statusSortOrder } from '../utils/statusUtils';
 import ItemCard from '../components/ItemCard';
 import SystemStatus from '../components/SystemStatus';
 import { colours } from '../components/colours';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
+type Section = { title: string; data: DerivedItem[] };
+
+/**
+ * Group items into per-category sections.
+ *
+ * Category grouping nests urgency sorting rather than replacing it:
+ *   - items within a section keep the existing sortItems() urgency order
+ *   - sections are ordered by the urgency of their most-urgent item, so the
+ *     category that needs attention floats to the top
+ *   - DEFAULT_CATEGORIES order breaks ties between equally-urgent sections
+ */
+function buildSections(items: DerivedItem[]): Section[] {
+  const map = new Map<string, DerivedItem[]>();
+  for (const item of items) {
+    const cat = item.category || 'Other';
+    if (!map.has(cat)) map.set(cat, []);
+    map.get(cat)!.push(item);
+  }
+
+  const sections: Array<Section & { urgency: number; catOrder: number }> = [];
+  for (const [title, data] of map.entries()) {
+    const sorted = sortItems(data) as DerivedItem[];
+    const urgency = statusSortOrder(computeItemStatus(sorted[0]).label);
+    const catOrder = (DEFAULT_CATEGORIES as readonly string[]).indexOf(title);
+    sections.push({
+      title,
+      data: sorted,
+      urgency,
+      catOrder: catOrder === -1 ? DEFAULT_CATEGORIES.length : catOrder,
+    });
+  }
+
+  sections.sort((a, b) => a.urgency - b.urgency || a.catOrder - b.catOrder);
+
+  return sections.map(({ title, data }) => ({ title, data }));
+}
 
 const QUICK_START = [
   { name: 'Dentist', category: 'Health' },
@@ -109,6 +146,8 @@ export default function MainListScreen() {
             style={styles.scanBtn}
             onPress={() => navigation.navigate('ScanFood')}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Scan food"
+            accessibilityRole="button"
           >
             <Text style={styles.scanBtnText}>📷</Text>
           </TouchableOpacity>
@@ -116,6 +155,8 @@ export default function MainListScreen() {
             style={styles.addBtn}
             onPress={() => navigation.navigate('Add')}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Add something"
+            accessibilityRole="button"
           >
             <Text style={styles.addBtnText}>＋</Text>
           </TouchableOpacity>
@@ -124,8 +165,8 @@ export default function MainListScreen() {
 
       <SystemStatus items={items} />
 
-      <FlatList
-        data={items}
+      <SectionList<DerivedItem>
+        sections={buildSections(items)}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <ItemCard
@@ -135,8 +176,14 @@ export default function MainListScreen() {
             onDelete={handleDelete}
           />
         )}
+        renderSectionHeader={({ section }) => (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionHeaderText}>{section.title}</Text>
+          </View>
+        )}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        stickySectionHeadersEnabled={false}
       />
     </SafeAreaView>
   );
@@ -279,5 +326,18 @@ const styles = StyleSheet.create({
 
   list: {
     paddingBottom: 32,
+  },
+  sectionHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 6,
+    backgroundColor: colours.background,
+  },
+  sectionHeaderText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colours.textMuted,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
 });
