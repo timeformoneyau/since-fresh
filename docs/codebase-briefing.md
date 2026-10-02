@@ -49,7 +49,8 @@ deferred, not ported.
 - **expo-notifications** for **local** (not push) reminders.
 - **date-fns** for all date math.
 - **expo-camera** + **expo-image-manipulator** for the food-scan capture.
-- **expo-constants** to read the proxy URL + shared secret from `app.json` → `extra`.
+- **expo-constants** to read config from `extra`: the proxy URL and Supabase keys from `app.json`,
+  the proxy shared secret injected by `app.config.js` from the `EXPIRY_API_SECRET` env var.
 - Backend (`since-proxy`): **Next.js 16**, **@anthropic-ai/sdk**, **sharp** (image resize), model
   `claude-haiku-4-5` with JSON-schema structured output.
 
@@ -173,7 +174,8 @@ interpretation (DD/MM), handles stamped/embossed dates, prefers "USE BY" over "B
 returns `null` + low confidence rather than guessing. A regression guard lives in the proxy:
 `npm run test:labels` (renders synthetic labels, asserts the extracted date + date type).
 
-Config lives in `app.json` → `extra`: `expiryApiUrl`, `expiryApiSecret`. The actual Anthropic key
+Config: `expiryApiUrl` lives in `app.json` → `extra`; `expiryApiSecret` is injected by
+`app.config.js` from the `EXPIRY_API_SECRET` env var (`.env` locally, EAS env for builds). The actual Anthropic key
 is only ever on the server (Vercel env var).
 
 ---
@@ -216,7 +218,8 @@ src/
   components/             ItemCard, SystemStatus, CategoryPicker, DatePickerModal, colours.ts
   services/expiryApi.ts   networking to the proxy (parseExpiryPhoto)
 App.tsx                   navigation + notification permission bootstrap
-app.json                  expo-camera plugin, extra.{expiryApiUrl, expiryApiSecret, eas.projectId}
+app.json                  expo-camera plugin, extra.{expiryApiUrl, supabaseUrl, supabaseAnonKey, eas.projectId}
+app.config.js             injects extra.expiryApiSecret from EXPIRY_API_SECRET (never committed)
 ```
 
 **Invariant that matters:** screens never touch storage or notifications directly — all mutations
@@ -226,25 +229,23 @@ go through `domain/items/service.ts`, the one place that keeps persistence and s
 
 ## 11. Known gaps / tech debt / not-built-yet
 
-- **Dead code:** `src/storage/items.ts` is a legacy bare-array store (no migration, no expiry
-  backfill) and is imported nowhere — everything goes through `src/domain/items/storage.ts`. Safe
-  to delete.
-- **`app.json` ships the shared secret** (`extra.expiryApiSecret`) in the bundle. By design — it
-  only gates abuse of the Anthropic budget, not user data — but it is not a true secret. Rotate via
-  Vercel + app.json if leaked.
+- **Proxy shared secret is still in public git history.** It was moved out of `app.json` on
+  2026-08-22, but the old value was committed to this public repo and must be rotated (Vercel
+  `MOBILE_APP_SECRET` + `EXPIRY_API_SECRET` for builds). It only gates abuse of the Anthropic
+  budget, not user data.
 - **Sync is item-level last-write-wins.** Two devices editing different fields of the same item
   inside one sync window will keep only the later edit. Fine for single-user; revisit if sharing
   is added.
-- **Supabase credentials are not committed** — set `extra.supabaseUrl` / `extra.supabaseAnonKey`
-  in `app.json`. Until then the app is local-only. **The auth + sync path has not yet been
-  exercised against a live Supabase project.**
-- **No iOS path exercised** (Android package `com.anonymous.sincefresh`; EAS project configured).
+- **Supabase is configured** (`extra.supabaseUrl` / publishable `extra.supabaseAnonKey` in
+  `app.json`; schema in `supabase/schema.sql`). Nothing in the repo records the auth + sync path
+  being exercised end-to-end on a device against that project.
+- **No iOS path exercised** (package/bundle id `com.since.app`; EAS project `since-fresh`, 3c35d81c).
 - **Real-world OCR accuracy unverified** on stamped-on-plastic dates — only clean printed labels
   tested so far.
 - **Suggestions are English keyword-only**, ~10 hardcoded rules.
 - **No dark mode.**
-- **Still no test framework.** The sync merge rules and the notification engine remain the
-  highest-value untested logic.
+- **Tests cover sync only.** `npm test` (Node's built-in runner) runs 11 tests on
+  `src/domain/sync/runSync.ts`. The notification engine and status/date logic remain untested.
 
 ---
 
@@ -262,5 +263,6 @@ go through `domain/items/service.ts`, the one place that keeps persistence and s
 
 ---
 
-*Generated 2026-06-29. Updated 2026-08-22 for the since/since-fresh consolidation.
+*Generated 2026-06-29. Updated 2026-08-22 for the since/since-fresh consolidation; 2026-10-02 to
+reflect the secret move, tests and committed Supabase config.
 Pull directly from code — no assumptions.*
