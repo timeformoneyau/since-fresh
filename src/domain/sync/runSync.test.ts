@@ -50,6 +50,7 @@ function harness(opts: { pushLatencyMs?: number } = {}) {
   const ports: SyncPorts = {
     isConfigured: () => true,
     isAuthenticated: async () => true,
+    isOwnedBySignedInUser: async () => true,
     loadItems: async () => clone(state.local),
     saveItems: async (items) => { state.local = clone(items); },
     loadQueue: async () => clone(state.queue),
@@ -185,6 +186,28 @@ describe('runSync — failure and gating', () => {
     const h = harness();
     h.ports.isAuthenticated = async () => false;
     assert.equal(await runSync(h.ports), 'skipped');
+  });
+
+  test('skips without touching anything when the device owner is another account', async () => {
+    const h = harness();
+    await h.mutateLocally(item('A', '2026-08-22T10:00:00.000Z'));
+    h.state.cloud = [item('Z', '2026-08-22T09:00:00.000Z')];
+    h.ports.isOwnedBySignedInUser = async () => false;
+
+    const touched: string[] = [];
+    for (const name of [
+      'loadItems', 'saveItems', 'loadQueue', 'removeFromQueue',
+      'cloudUpsertMany', 'cloudDeleteMany', 'cloudLoadItems',
+      'cloudLoadTombstones', 'afterMerge',
+    ] as const) {
+      h.ports[name] = (async () => { touched.push(name); }) as never;
+    }
+
+    assert.equal(await runSync(h.ports), 'skipped');
+    assert.deepEqual(touched, [], 'no storage or network port may be called');
+    assert.deepEqual(ids(h.state.local), ['A']);
+    assert.deepEqual(h.state.queue.upserts, ['A']);
+    assert.deepEqual(ids(h.state.cloud), ['Z']);
   });
 });
 

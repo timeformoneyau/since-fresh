@@ -13,7 +13,7 @@
  * tested. This module only supplies the real I/O and guards re-entry.
  */
 
-import { loadItems, saveItems } from '../items/storage';
+import { loadItems, saveItems, clearItems } from '../items/storage';
 import {
   cloudLoadItems,
   cloudUpsertMany,
@@ -21,11 +21,17 @@ import {
   cloudLoadTombstones,
 } from '../items/cloudStorage';
 import { isCloudSyncConfigured, getSupabase } from '../../lib/supabase';
-import { loadQueue, removeFromQueue, enqueueUpsert } from './queue';
-import { rescheduleAllNotifications } from '../../notifications/scheduler';
+import { loadQueue, removeFromQueue, enqueueUpsert, clearQueue } from './queue';
+import { loadOwner, saveOwner, clearOwner } from './owner';
+import {
+  rescheduleAllNotifications,
+  cancelAllReminders,
+} from '../../notifications/scheduler';
 import { runSync, SyncPorts, SyncOutcome } from './runSync';
+import { applySignIn, OwnershipPorts, SignInDecision } from './ownership';
 
 export type { SyncOutcome } from './runSync';
+export type { SignInDecision } from './ownership';
 export { mergeItems } from './runSync';
 
 async function isAuthenticated(): Promise<boolean> {
@@ -39,9 +45,22 @@ async function isAuthenticated(): Promise<boolean> {
   }
 }
 
+async function isOwnedBySignedInUser(): Promise<boolean> {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return false;
+    return (await loadOwner()) === session.user.id;
+  } catch {
+    return false;
+  }
+}
+
 const ports: SyncPorts = {
   isConfigured: isCloudSyncConfigured,
   isAuthenticated,
+  isOwnedBySignedInUser,
   loadItems,
   saveItems,
   loadQueue,
@@ -72,25 +91,61 @@ export function syncInBackground(): void {
   void syncNow();
 }
 
+/** Let any running sync finish, so it cannot write back after a clear. */
+async function waitForSync(): Promise<void> {
+  if (inFlight) await inFlight;
+}
+
+/** Remove the local list, its sync queue and every scheduled reminder. */
+async function clearLocalData(): Promise<void> {
+  await waitForSync();
+  await clearItems();
+  await clearQueue();
+  await cancelAllReminders();
+}
+
+const ownershipPorts: OwnershipPorts = {
+  loadOwner,
+  saveOwner,
+  loadItemIds: async () => (await loadItems()).map((i) => i.id),
+  enqueueUpsert,
+  clearLocalData,
+};
+
+let reconciling: Promise<SignInDecision | null> | null = null;
+
 /**
- * On first sign-in, adopt everything held locally into the new account so
- * pre-account data is not stranded on the device.
+ * Apply the sign-in ownership rule (ownership.ts) for the signed-in account.
+ * Local work only, and fast; the caller syncs afterwards. Run on SIGNED_IN
+ * and at app start when a session already exists, before the list is shown.
  *
- * Enqueues rather than pushing directly: that way a failed upload is retried
- * by the normal queue-driven path instead of being silently lost.
+ * Takes the user id rather than reading the session, so it is safe to call
+ * from inside an onAuthStateChange callback.
  */
-export async function adoptLocalItemsIntoAccount(): Promise<void> {
-  if (!isCloudSyncConfigured()) return;
-  if (!(await isAuthenticated())) return;
+export async function reconcileDeviceOwnership(
+  signedInUserId: string,
+): Promise<SignInDecision | null> {
+  if (!isCloudSyncConfigured()) return null;
+  if (reconciling) return reconciling;
 
+  reconciling = applySignIn(ownershipPorts, signedInUserId).catch(() => null);
   try {
-    const local = await loadItems();
-    for (const item of local) {
-      await enqueueUpsert(item.id);
-    }
-  } catch {
-    // Nothing enqueued; the next mutation or focus will trigger a sync.
+    return await reconciling;
+  } finally {
+    reconciling = null;
   }
+}
 
-  await syncNow();
+/**
+ * Wipe everything account-specific from the phone (decision D3): items,
+ * queue, scheduled reminders and, last, the owner. The owner goes last so
+ * that if this is interrupted, the next sign-in still sees the old owner and
+ * replaces rather than adopting leftovers.
+ *
+ * Only for an explicit sign-out or account deletion. An involuntary sign-out
+ * (expired session) must not call this.
+ */
+export async function wipeLocalAccountData(): Promise<void> {
+  await clearLocalData();
+  await clearOwner();
 }

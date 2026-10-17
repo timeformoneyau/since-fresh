@@ -10,6 +10,7 @@
  * so every operation succeeds offline and the UI is never blocked by it.
  */
 
+import { randomUUID } from 'expo-crypto';
 import { SinceItem, CompletionEvent } from '../../types';
 import { CreateItemInput, UpdateItemInput, DerivedItem } from './types';
 import { loadItems, saveItems } from './storage';
@@ -23,8 +24,9 @@ import {
 import { enqueueUpsert, enqueueDelete } from '../sync/queue';
 import { syncInBackground } from '../sync/engine';
 
+/** New ids are UUIDs. Ids created by earlier builds stay as they are. */
 function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+  return randomUUID();
 }
 
 /** Load all items, sorted for display, with derived fields attached. */

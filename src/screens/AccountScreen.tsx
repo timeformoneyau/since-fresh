@@ -24,6 +24,7 @@ export default function AccountScreen() {
   const [pending, setPending] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState('');
+  const [preparingSignOut, setPreparingSignOut] = useState(false);
 
   useEffect(() => {
     getUser().then((u) => setEmail(u?.email ?? '')).catch(() => {});
@@ -45,18 +46,35 @@ export default function AccountScreen() {
     setSyncing(false);
   }
 
-  function handleSignOut() {
+  async function handleSignOut() {
+    // Final sync first (decision D3), then warn using what is still queued
+    // afterwards, since signing out removes the list from this phone.
+    setPreparingSignOut(true);
+    await syncNow();
+    const stillPending = await hasPending().catch(() => false);
+    setPending(stillPending);
+    setPreparingSignOut(false);
+
     Alert.alert(
       'Sign out',
-      pending
-        ? 'Some changes have not synced yet. Sign out anyway?'
-        : 'Sign out of Since?',
+      stillPending
+        ? "Some changes haven't synced yet. Signing out removes your list from this phone, so those changes will be lost. Sign out anyway?"
+        : 'Your list is backed up. Signing out removes it from this phone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Sign out',
           style: 'destructive',
-          onPress: () => { signOut().catch(() => {}); },
+          onPress: async () => {
+            try {
+              await signOut();
+            } catch (e) {
+              Alert.alert(
+                "Couldn't sign out",
+                e instanceof Error ? e.message : 'Please try again.',
+              );
+            }
+          },
         },
       ],
     );
@@ -65,7 +83,7 @@ export default function AccountScreen() {
   function handleDeleteAccount() {
     Alert.alert(
       'Delete account',
-      'This permanently deletes your account and everything stored in the cloud. Items already on this device stay here. This cannot be undone.',
+      "This permanently deletes your account and your backed-up list, and removes the list from this phone. This can't be undone.",
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -138,9 +156,12 @@ export default function AccountScreen() {
         <TouchableOpacity
           style={styles.rowButton}
           onPress={handleSignOut}
+          disabled={preparingSignOut}
           accessibilityRole="button"
         >
-          <Text style={styles.rowButtonText}>Sign out</Text>
+          {preparingSignOut
+            ? <ActivityIndicator color={colours.textPrimary} />
+            : <Text style={styles.rowButtonText}>Sign out</Text>}
         </TouchableOpacity>
       </View>
 

@@ -16,6 +16,14 @@ export {
 } from './engine';
 
 /**
+ * Cancel every scheduled notification on the device. Used when the local list
+ * is removed (sign-out, account switch, account deletion).
+ */
+export async function cancelAllReminders(): Promise<void> {
+  await Notifications.cancelAllScheduledNotificationsAsync();
+}
+
+/**
  * Request notification permissions and set up the Android notification channel.
  * Call once on app startup.
  */

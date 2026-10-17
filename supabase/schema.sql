@@ -1,14 +1,18 @@
 -- Since app — Supabase schema
 -- Run this in the Supabase SQL Editor (Dashboard → SQL Editor → New query)
 --
--- Mirrors the unified SinceItem model in src/types/index.ts:
---   - expiry_date / source support the photo-scan flow (expiry-mode items)
---   - history holds the completion log for repeat-mode items
--- Both modes live in one table; which field drives the due date is decided
--- client-side in computeItemStatus().
+-- Describes the final state for a fresh project. An existing project applies
+-- the changes in supabase/migrations/ instead (002_composite_keys.sql moves
+-- items to the (user_id, id) key and drops the food-tracking columns).
+--
+-- Mirrors the SinceItem model in src/types/index.ts; history holds the
+-- completion log.
 
+-- Item ids are unique per account, not globally: the key is (user_id, id), so
+-- two accounts can hold the same id. The app's upsert names (user_id, id) as
+-- its conflict target.
 create table if not exists public.items (
-  id             text        primary key,
+  id             text        not null,
   user_id        uuid        not null references auth.users(id) on delete cascade,
   name           text        not null,
   category       text        not null default 'Other',
@@ -16,28 +20,10 @@ create table if not exists public.items (
   history        jsonb       not null default '[]'::jsonb,
   repeat_value   integer,
   repeat_unit    text        check (repeat_unit in ('days', 'weeks', 'months', 'years')),
-  expiry_date    text,
-  source         text        not null default 'manual'
-                             check (source in ('manual', 'photo')),
   created_at     timestamptz not null,
-  updated_at     timestamptz not null
+  updated_at     timestamptz not null,
+  constraint items_pkey primary key (user_id, id)
 );
-
--- Migration for an existing deployment created before the consolidation.
--- Safe to run repeatedly.
-alter table public.items add column if not exists expiry_date text;
-alter table public.items add column if not exists source text not null default 'manual';
-alter table public.items add column if not exists history jsonb not null default '[]'::jsonb;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'items_source_check'
-  ) then
-    alter table public.items
-      add constraint items_source_check check (source in ('manual', 'photo'));
-  end if;
-end $$;
 
 -- Pull-by-timestamp support for incremental sync
 create index if not exists items_user_updated_idx

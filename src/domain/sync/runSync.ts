@@ -32,6 +32,8 @@ export interface QueueSnapshot {
 export interface SyncPorts {
   isConfigured(): boolean;
   isAuthenticated(): Promise<boolean>;
+  /** True only when the stored device owner is the signed-in account. */
+  isOwnedBySignedInUser(): Promise<boolean>;
   loadItems(): Promise<SinceItem[]>;
   saveItems(items: SinceItem[]): Promise<void>;
   loadQueue(): Promise<QueueSnapshot>;
@@ -90,6 +92,9 @@ export function mergeItems(
 export async function runSync(ports: SyncPorts): Promise<SyncOutcome> {
   if (!ports.isConfigured()) return 'skipped';
   if (!(await ports.isAuthenticated())) return 'skipped';
+  // The local list may belong to another account (see ownership.ts). Until
+  // the sign-in rule has run, touch nothing: no push, no pull, no write.
+  if (!(await ports.isOwnedBySignedInUser())) return 'skipped';
 
   try {
     // ─── 1. Snapshot what we are about to push ──────────────────────────

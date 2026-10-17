@@ -11,7 +11,7 @@ import { RootStackParamList, AuthStackParamList } from './src/types';
 import { colours } from './src/components/colours';
 import { requestNotificationPermissions, rescheduleAllNotifications } from './src/notifications/scheduler';
 import { loadItems } from './src/domain/items/storage';
-import { adoptLocalItemsIntoAccount, syncInBackground } from './src/domain/sync/engine';
+import { reconcileDeviceOwnership, syncInBackground } from './src/domain/sync/engine';
 
 // App screens
 import MainListScreen from './src/screens/MainListScreen';
@@ -78,39 +78,53 @@ function AuthNavigator() {
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(isCloudSyncConfigured());
+  const [reconciling, setReconciling] = useState(false);
 
-  // Notifications are local and account-independent — bootstrap them once,
-  // regardless of auth state, so a local-only install still gets reminders.
   useEffect(() => {
+    const supabase = getSupabase();
+
     (async () => {
+      // With an existing session, apply the ownership rule before the list
+      // is shown or reminders are scheduled, so another account's items are
+      // never displayed, rescheduled or uploaded.
+      if (supabase) {
+        const { data: { session: s } } = await supabase.auth.getSession();
+        if (s) await reconcileDeviceOwnership(s.user.id);
+        setSession(s);
+        setLoading(false);
+      }
+
+      // Notifications are local and account-independent, so a local-only
+      // install still gets reminders.
       await requestNotificationPermissions();
       const items = await loadItems();
       await rescheduleAllNotifications(items);
       syncInBackground();
     })();
-  }, []);
 
-  useEffect(() => {
-    const supabase = getSupabase();
     if (!supabase) return; // Local-only build: no auth gate at all.
-
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setLoading(false);
-    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
       if (event === 'SIGNED_IN' && s) {
-        // Push anything tracked before signing in, then reconcile.
-        adoptLocalItemsIntoAccount().catch(() => {});
+        // Adopt, resume or replace the local list (ownership.ts), then sync.
+        // Hold the list back until the local part is done.
+        setReconciling(true);
+        reconcileDeviceOwnership(s.user.id)
+          .finally(() => {
+            setReconciling(false);
+            syncInBackground();
+          });
       }
+      // SIGNED_OUT deliberately wipes nothing here. Only an explicit sign-out
+      // clears the phone (auth/service.ts); after an expired session the
+      // ownership rule decides at the next sign-in.
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  if (loading) {
+  if (loading || reconciling) {
     return (
       <View style={styles.splash}>
         <ActivityIndicator color={colours.textMuted} />
