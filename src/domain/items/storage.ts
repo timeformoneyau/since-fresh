@@ -17,3 +17,7 @@ export async function loadItems(): Promise<SinceItem[]> {
 export async function saveItems(items: SinceItem[]): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, toEnvelope(items));
 }
+
+export async function clearItems(): Promise<void> {
+  await AsyncStorage.removeItem(STORAGE_KEY);
+}

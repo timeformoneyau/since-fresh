@@ -4,7 +4,7 @@
  * This module is transport only — it does not decide *when* to sync. That
  * belongs to domain/sync/engine.ts. Every function here assumes the caller
  * has confirmed cloud sync is configured and the user is authenticated, and
- * will throw otherwise; the sync engine treats those throws as "stay offline".
+ * will throw otherwise; the sync engine classifies those throws (classify.ts).
  */
 
 import { SinceItem, CompletionEvent, RepeatUnit } from '../../types';
@@ -53,7 +53,10 @@ function itemToRow(item: SinceItem, userId: string): ItemRow {
 }
 
 export async function currentUserId(): Promise<string> {
-  const { data: { user } } = await requireSupabase().auth.getUser();
+  // getUser asks the auth server, so a revoked session or deleted user
+  // surfaces here; throw its error so sync can classify it (classify.ts).
+  const { data: { user }, error } = await requireSupabase().auth.getUser();
+  if (error) throw error;
   if (!user) throw new Error('Not authenticated');
   return user.id;
 }
@@ -71,7 +74,10 @@ export async function cloudUpsertMany(items: SinceItem[]): Promise<void> {
   if (items.length === 0) return;
   const userId = await currentUserId();
   const rows = items.map((item) => itemToRow(item, userId));
-  const { error } = await requireSupabase().from('items').upsert(rows);
+  // The key is (user_id, id): two accounts may hold the same item id.
+  const { error } = await requireSupabase()
+    .from('items')
+    .upsert(rows, { onConflict: 'user_id,id' });
   if (error) throw error;
 }
 
@@ -86,10 +92,16 @@ export async function cloudDeleteMany(ids: string[]): Promise<void> {
 
   const { error: tombErr } = await supabase
     .from('deleted_items')
-    .upsert(ids.map((id) => ({ id, user_id: userId })));
+    .upsert(ids.map((id) => ({ id, user_id: userId })), { onConflict: 'id,user_id' });
   if (tombErr) throw tombErr;
 
-  const { error } = await supabase.from('items').delete().in('id', ids);
+  // Scoped to this account explicitly, not only through RLS: ids are unique
+  // per account, not globally.
+  const { error } = await supabase
+    .from('items')
+    .delete()
+    .eq('user_id', userId)
+    .in('id', ids);
   if (error) throw error;
 }
 

@@ -14,11 +14,10 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { updatePassword } from '../domain/auth/service';
+import { friendlyAuthError, MIN_PASSWORD_LENGTH } from '../domain/auth/errors';
 import { colours } from '../components/colours';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'ChangePassword'>;
-
-const MIN_PASSWORD_LENGTH = 6;
 
 export default function ChangePasswordScreen() {
   const navigation = useNavigation<Nav>();
@@ -44,7 +43,7 @@ export default function ChangePasswordScreen() {
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't change your password.");
+      setError(friendlyAuthError(e));
     } finally {
       setLoading(false);
     }

@@ -9,6 +9,14 @@
 
 import { User } from '@supabase/supabase-js';
 import { requireSupabase } from '../../lib/supabase';
+import { wipeLocalAccountData } from '../sync/engine';
+import { applyRecoveryEvent } from './recovery';
+
+/**
+ * What an emailed code is for: confirming a new account, resetting a
+ * password, or confirming a new email address (sent to the new address).
+ */
+export type CodePurpose = 'signup' | 'recovery' | 'email_change';
 
 export async function signUp(
   email: string,
@@ -20,18 +28,90 @@ export async function signUp(
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
+  // Release any recovery hold left by an interrupted recovery. Done before
+  // signing in, so App.tsx never shows "Set a new password" for this session.
+  await applyRecoveryEvent('password-sign-in');
   const { error } = await requireSupabase().auth.signInWithPassword({ email, password });
   if (error) throw error;
 }
 
+/**
+ * Explicit sign-out (decision D3). Signs out of Supabase, then removes the
+ * list, queue, owner and reminders from the phone. The caller runs the final
+ * sync and warns about unsynced changes first.
+ *
+ * If the Supabase sign-out fails, nothing is wiped and the error is thrown.
+ */
 export async function signOut(): Promise<void> {
   const { error } = await requireSupabase().auth.signOut();
   if (error) throw error;
+  await wipeLocalAccountData();
 }
 
+/** Emails a recovery code (D2: codes typed into the app, no links). */
 export async function sendPasswordReset(email: string): Promise<void> {
   const { error } = await requireSupabase().auth.resetPasswordForEmail(email);
   if (error) throw error;
+}
+
+/** Sends a fresh sign-up confirmation code. */
+export async function resendSignupCode(email: string): Promise<void> {
+  const { error } = await requireSupabase().auth.resend({ type: 'signup', email });
+  if (error) throw error;
+}
+
+export async function resendCode(email: string, purpose: CodePurpose): Promise<void> {
+  if (purpose === 'recovery') {
+    await sendPasswordReset(email);
+    return;
+  }
+  const { error } = await requireSupabase().auth.resend({ type: purpose, email });
+  if (error) throw error;
+}
+
+/**
+ * Starts an email change (F10). Supabase emails a code to the new address
+ * ("Secure email change" off, so the old address is not asked). The change
+ * applies once verifyCode(newEmail, code, 'email_change') succeeds.
+ */
+export async function requestEmailChange(newEmail: string): Promise<void> {
+  const { error } = await requireSupabase().auth.updateUser({ email: newEmail });
+  if (error) throw error;
+}
+
+/**
+ * Verifies an emailed code. For sign-up and recovery, success creates a
+ * session and the auth listener in App.tsx takes over; for an email change
+ * the session continues with the new address. For recovery, the hold is set before verifying so
+ * the user lands on "Set a new password" whichever auth event fires.
+ */
+export async function verifyCode(
+  email: string,
+  code: string,
+  purpose: CodePurpose,
+): Promise<void> {
+  if (purpose === 'recovery') await applyRecoveryEvent('recovery-verify-started');
+  const { error } = await requireSupabase().auth.verifyOtp({ email, token: code, type: purpose });
+  if (error) {
+    if (purpose === 'recovery') await applyRecoveryEvent('recovery-verify-failed');
+    throw error;
+  }
+}
+
+/** Saves the new password after a recovery code and releases the hold. */
+export async function completePasswordRecovery(newPassword: string): Promise<void> {
+  await updatePassword(newPassword);
+  await applyRecoveryEvent('password-saved');
+}
+
+/**
+ * Leaving "Set a new password" without saving. This is an involuntary
+ * sign-out, not D3: nothing on the phone is wiped, and the ownership rule
+ * decides at the next sign-in.
+ */
+export async function abandonPasswordRecovery(): Promise<void> {
+  await requireSupabase().auth.signOut().catch(() => {});
+  await applyRecoveryEvent('recovery-abandoned');
 }
 
 export async function updatePassword(newPassword: string): Promise<void> {
@@ -48,5 +128,8 @@ export async function deleteAccount(): Promise<void> {
   const supabase = requireSupabase();
   const { error } = await supabase.rpc('delete_user');
   if (error) throw error;
-  await supabase.auth.signOut();
+  // The account is gone; the local copy of its list goes with it. A failed
+  // sign-out call must not stop the wipe.
+  await supabase.auth.signOut().catch(() => {});
+  await wipeLocalAccountData();
 }

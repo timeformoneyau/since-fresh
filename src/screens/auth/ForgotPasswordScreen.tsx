@@ -12,6 +12,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../types';
 import { sendPasswordReset } from '../../domain/auth/service';
+import { friendlyAuthError } from '../../domain/auth/errors';
 import { colours } from '../../components/colours';
 import { authStyles as s } from './authStyles';
 
@@ -22,7 +23,6 @@ export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [sent, setSent] = useState(false);
 
   async function handleReset() {
     const trimmedEmail = email.trim().toLowerCase();
@@ -34,28 +34,12 @@ export default function ForgotPasswordScreen() {
     setLoading(true);
     try {
       await sendPasswordReset(trimmedEmail);
-      setSent(true);
+      navigation.navigate('EnterCode', { email: trimmedEmail, purpose: 'recovery' });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't send the reset email.");
+      setError(friendlyAuthError(e));
     } finally {
       setLoading(false);
     }
-  }
-
-  if (sent) {
-    return (
-      <ScrollView contentContainerStyle={s.container} style={s.flex}>
-        <Text style={s.appName}>Since</Text>
-        <Text style={s.heading}>Check your email</Text>
-        <Text style={s.subheading}>
-          If an account exists for {email.trim().toLowerCase()}, we've sent a link to
-          reset your password.
-        </Text>
-        <TouchableOpacity style={s.primaryBtn} onPress={() => navigation.navigate('SignIn')}>
-          <Text style={s.primaryBtnText}>Back to sign in</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    );
   }
 
   return (
@@ -71,7 +55,7 @@ export default function ForgotPasswordScreen() {
         <Text style={s.appName}>Since</Text>
         <Text style={s.heading}>Reset password</Text>
         <Text style={s.subheading}>
-          Enter your email and we'll send you a link to set a new password.
+          Enter your email and we'll send you a code to set a new password.
         </Text>
 
         <View style={s.form}>
@@ -102,7 +86,7 @@ export default function ForgotPasswordScreen() {
             accessibilityRole="button"
           >
             <Text style={s.primaryBtnText}>
-              {loading ? 'Sending…' : 'Send reset link'}
+              {loading ? 'Sending…' : 'Send code'}
             </Text>
           </TouchableOpacity>
 

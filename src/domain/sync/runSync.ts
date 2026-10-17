@@ -21,8 +21,9 @@
  */
 
 import type { SinceItem } from '../../types';
+import type { SyncFailure } from './classify';
 
-export type SyncOutcome = 'synced' | 'skipped' | 'offline';
+export type SyncOutcome = 'synced' | 'skipped' | SyncFailure;
 
 export interface QueueSnapshot {
   upserts: string[];
@@ -31,7 +32,13 @@ export interface QueueSnapshot {
 
 export interface SyncPorts {
   isConfigured(): boolean;
+  /**
+   * False when there is simply no session. Throws when a session existed but
+   * could not be refreshed, so the failure is classified rather than skipped.
+   */
   isAuthenticated(): Promise<boolean>;
+  /** True only when the stored device owner is the signed-in account. */
+  isOwnedBySignedInUser(): Promise<boolean>;
   loadItems(): Promise<SinceItem[]>;
   saveItems(items: SinceItem[]): Promise<void>;
   loadQueue(): Promise<QueueSnapshot>;
@@ -41,6 +48,8 @@ export interface SyncPorts {
   cloudLoadItems(): Promise<SinceItem[]>;
   cloudLoadTombstones(): Promise<string[]>;
   afterMerge(items: SinceItem[]): Promise<void>;
+  /** Pure: what a thrown error means (classify.ts). */
+  classifyError(error: unknown): SyncFailure;
 }
 
 /**
@@ -89,9 +98,13 @@ export function mergeItems(
  */
 export async function runSync(ports: SyncPorts): Promise<SyncOutcome> {
   if (!ports.isConfigured()) return 'skipped';
-  if (!(await ports.isAuthenticated())) return 'skipped';
 
   try {
+    if (!(await ports.isAuthenticated())) return 'skipped';
+    // The local list may belong to another account (see ownership.ts). Until
+    // the sign-in rule has run, touch nothing: no push, no pull, no write.
+    if (!(await ports.isOwnedBySignedInUser())) return 'skipped';
+
     // ─── 1. Snapshot what we are about to push ──────────────────────────
     const pushing = await ports.loadQueue();
     const itemsAtPush = await ports.loadItems();
@@ -136,9 +149,9 @@ export async function runSync(ports: SyncPorts): Promise<SyncOutcome> {
     await ports.afterMerge(merged);
 
     return 'synced';
-  } catch {
-    // Offline, auth expired, or server error. Local state and queue are
+  } catch (error) {
+    // Offline, signed out, or a server error. Local state and queue are
     // untouched; the next trigger retries.
-    return 'offline';
+    return ports.classifyError(error);
   }
 }
