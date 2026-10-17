@@ -106,3 +106,18 @@ describe('isValidCodeFormat', () => {
     assert.ok(!isValidCodeFormat(''));
   });
 });
+
+describe('friendlyAuthError — change email', () => {
+  test('an address held by another account', () => {
+    assert.equal(friendlyAuthError(apiError('email_exists', 422), 'change-email'), AUTH_COPY.emailInUse);
+    assert.equal(friendlyAuthError(apiError('user_already_exists', 422), 'change-email'), AUTH_COPY.emailInUse);
+  });
+
+  test('outside change email the sign-up copy stands', () => {
+    assert.equal(friendlyAuthError(apiError('email_exists', 422)), AUTH_COPY.userExists);
+  });
+
+  test('an invalid address', () => {
+    assert.equal(friendlyAuthError(apiError('email_address_invalid', 400), 'change-email'), AUTH_COPY.invalidEmail);
+  });
+});

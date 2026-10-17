@@ -10,10 +10,13 @@
 import { User } from '@supabase/supabase-js';
 import { requireSupabase } from '../../lib/supabase';
 import { wipeLocalAccountData } from '../sync/engine';
-import { setRecoveryPending } from './recovery';
+import { applyRecoveryEvent } from './recovery';
 
-/** What an emailed code is for: confirming a new account, or resetting a password. */
-export type CodePurpose = 'signup' | 'recovery';
+/**
+ * What an emailed code is for: confirming a new account, resetting a
+ * password, or confirming a new email address (sent to the new address).
+ */
+export type CodePurpose = 'signup' | 'recovery' | 'email_change';
 
 export async function signUp(
   email: string,
@@ -25,6 +28,9 @@ export async function signUp(
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
+  // Release any recovery hold left by an interrupted recovery. Done before
+  // signing in, so App.tsx never shows "Set a new password" for this session.
+  await applyRecoveryEvent('password-sign-in');
   const { error } = await requireSupabase().auth.signInWithPassword({ email, password });
   if (error) throw error;
 }
@@ -55,13 +61,28 @@ export async function resendSignupCode(email: string): Promise<void> {
 }
 
 export async function resendCode(email: string, purpose: CodePurpose): Promise<void> {
-  if (purpose === 'recovery') await sendPasswordReset(email);
-  else await resendSignupCode(email);
+  if (purpose === 'recovery') {
+    await sendPasswordReset(email);
+    return;
+  }
+  const { error } = await requireSupabase().auth.resend({ type: purpose, email });
+  if (error) throw error;
 }
 
 /**
- * Verifies an emailed code. Success creates a session and the auth listener
- * in App.tsx takes over. For recovery, the hold is set before verifying so
+ * Starts an email change (F10). Supabase emails a code to the new address
+ * ("Secure email change" off, so the old address is not asked). The change
+ * applies once verifyCode(newEmail, code, 'email_change') succeeds.
+ */
+export async function requestEmailChange(newEmail: string): Promise<void> {
+  const { error } = await requireSupabase().auth.updateUser({ email: newEmail });
+  if (error) throw error;
+}
+
+/**
+ * Verifies an emailed code. For sign-up and recovery, success creates a
+ * session and the auth listener in App.tsx takes over; for an email change
+ * the session continues with the new address. For recovery, the hold is set before verifying so
  * the user lands on "Set a new password" whichever auth event fires.
  */
 export async function verifyCode(
@@ -69,10 +90,10 @@ export async function verifyCode(
   code: string,
   purpose: CodePurpose,
 ): Promise<void> {
-  if (purpose === 'recovery') await setRecoveryPending(true);
+  if (purpose === 'recovery') await applyRecoveryEvent('recovery-verify-started');
   const { error } = await requireSupabase().auth.verifyOtp({ email, token: code, type: purpose });
   if (error) {
-    if (purpose === 'recovery') await setRecoveryPending(false);
+    if (purpose === 'recovery') await applyRecoveryEvent('recovery-verify-failed');
     throw error;
   }
 }
@@ -80,7 +101,7 @@ export async function verifyCode(
 /** Saves the new password after a recovery code and releases the hold. */
 export async function completePasswordRecovery(newPassword: string): Promise<void> {
   await updatePassword(newPassword);
-  await setRecoveryPending(false);
+  await applyRecoveryEvent('password-saved');
 }
 
 /**
@@ -90,7 +111,7 @@ export async function completePasswordRecovery(newPassword: string): Promise<voi
  */
 export async function abandonPasswordRecovery(): Promise<void> {
   await requireSupabase().auth.signOut().catch(() => {});
-  await setRecoveryPending(false);
+  await applyRecoveryEvent('recovery-abandoned');
 }
 
 export async function updatePassword(newPassword: string): Promise<void> {

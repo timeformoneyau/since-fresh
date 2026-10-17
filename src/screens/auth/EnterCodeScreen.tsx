@@ -10,23 +10,26 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { AuthStackParamList } from '../../types';
-import { verifyCode, resendCode } from '../../domain/auth/service';
+import { AuthStackParamList, RootStackParamList } from '../../types';
+import { verifyCode, resendCode, CodePurpose } from '../../domain/auth/service';
 import { friendlyAuthError } from '../../domain/auth/errors';
 import { secondsUntilResend, isValidCodeFormat } from '../../domain/auth/cooldown';
 import { colours } from '../../components/colours';
 import { authStyles as s } from './authStyles';
 
-type Nav = NativeStackNavigationProp<AuthStackParamList, 'EnterCode'>;
-type Route = RouteProp<AuthStackParamList, 'EnterCode'>;
+type AuthNav = NativeStackNavigationProp<AuthStackParamList, 'EnterCode'>;
+type AppNav = NativeStackNavigationProp<RootStackParamList, 'EnterCode'>;
+type Route = RouteProp<{ EnterCode: { email: string; purpose: CodePurpose } }, 'EnterCode'>;
 
 /**
- * Shared by sign-up confirmation and password reset (D2: codes, not links).
- * The previous screen has just sent a code, so the resend cooldown starts now.
+ * Shared by sign-up confirmation, password reset (D2: codes, not links) and,
+ * inside the signed-in app, email change (F10). The previous screen has just
+ * sent a code, so the resend cooldown starts now.
  */
 export default function EnterCodeScreen() {
-  const navigation = useNavigation<Nav>();
+  const navigation = useNavigation<AuthNav | AppNav>();
   const { email, purpose } = useRoute<Route>().params;
+  const changingEmail = purpose === 'email_change';
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -53,10 +56,15 @@ export default function EnterCodeScreen() {
     setLoading(true);
     try {
       await verifyCode(email, code, purpose);
+      if (changingEmail) {
+        // Still signed in, now with the new address; Account shows it.
+        (navigation as AppNav).popTo('Account');
+        return;
+      }
       // The auth listener in App.tsx takes over: the list for sign-up,
       // "Set a new password" for recovery.
     } catch (e) {
-      setError(friendlyAuthError(e));
+      setError(friendlyAuthError(e, changingEmail ? 'change-email' : undefined));
       setLoading(false);
     }
   }
@@ -72,7 +80,7 @@ export default function EnterCodeScreen() {
       setCode('');
       setNotice("We've sent a new code.");
     } catch (e) {
-      setError(friendlyAuthError(e));
+      setError(friendlyAuthError(e, changingEmail ? 'change-email' : undefined));
     }
   }
 
@@ -86,11 +94,13 @@ export default function EnterCodeScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={s.appName}>Since</Text>
+        {!changingEmail && <Text style={s.appName}>Since</Text>}
         <Text style={s.heading}>Enter your code</Text>
         <Text style={s.subheading}>
           {purpose === 'recovery'
             ? `If there's an account for ${email}, we've emailed it a code to reset the password.`
+            : changingEmail
+            ? `We've emailed a code to ${email}. Enter it to switch your account to this address.`
             : `We've emailed a code to ${email}. Enter it to finish setting up your account.`}
         </Text>
 
@@ -137,14 +147,18 @@ export default function EnterCodeScreen() {
             </Text>
           </TouchableOpacity>
 
-          <Text style={s.noticeText}>If you already have an account, sign in instead.</Text>
+          {!changingEmail && (
+            <Text style={s.noticeText}>If you already have an account, sign in instead.</Text>
+          )}
         </View>
 
-        <View style={s.footer}>
-          <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
-            <Text style={s.footerLink}>Back to sign in</Text>
-          </TouchableOpacity>
-        </View>
+        {!changingEmail && (
+          <View style={s.footer}>
+            <TouchableOpacity onPress={() => (navigation as AuthNav).navigate('SignIn')}>
+              <Text style={s.footerLink}>Back to sign in</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );

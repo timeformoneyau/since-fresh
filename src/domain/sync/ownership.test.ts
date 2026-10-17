@@ -9,6 +9,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { decideOnSignIn, applySignIn, type OwnershipPorts } from './ownership.ts';
+import { classifySyncError } from './classify.ts';
 import { runSync, type SyncPorts, type QueueSnapshot } from './runSync.ts';
 import type { SinceItem } from '../../types/index.ts';
 
@@ -86,6 +87,7 @@ function phone(opts: { owner: string | null; local: SinceItem[]; signedIn: strin
     cloudLoadItems: async () => [...cloudFor(state.signedIn)],
     cloudLoadTombstones: async () => [],
     afterMerge: async (items) => { state.reminders = items.length; },
+    classifyError: classifySyncError,
   };
 
   return { state, ownership, sync };

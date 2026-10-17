@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../types';
 import { signIn, resendSignupCode } from '../../domain/auth/service';
 import { friendlyAuthError, authErrorCode } from '../../domain/auth/errors';
+import { takeSignInNotice, onSignInNotice } from '../../domain/auth/sessionNotice';
 import { colours } from '../../components/colours';
 import { authStyles as s } from './authStyles';
 
@@ -26,6 +27,10 @@ export default function SignInScreen() {
   const [error, setError] = useState('');
   const [unconfirmed, setUnconfirmed] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
+  // Why the user is here, after an expired or revoked session.
+  const [notice, setNotice] = useState(() => takeSignInNotice() ?? '');
+
+  useEffect(() => onSignInNotice(() => setNotice(takeSignInNotice() ?? '')), []);
 
   async function handleSignIn() {
     const trimmedEmail = email.trim().toLowerCase();
@@ -34,6 +39,7 @@ export default function SignInScreen() {
       return;
     }
     setError('');
+    setNotice('');
     setUnconfirmed(false);
     setLoading(true);
     try {
@@ -77,6 +83,8 @@ export default function SignInScreen() {
         <Text style={s.subheading}>Good to have you back.</Text>
 
         <View style={s.form}>
+          {notice !== '' && <Text style={s.noticeText}>{notice}</Text>}
+
           <View style={s.field}>
             <Text style={s.label}>Email</Text>
             <TextInput

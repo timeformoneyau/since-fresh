@@ -29,6 +29,10 @@ import {
 } from '../../notifications/scheduler';
 import { runSync, SyncPorts, SyncOutcome } from './runSync';
 import { applySignIn, OwnershipPorts, SignInDecision } from './ownership';
+import { classifySyncError } from './classify';
+import { saveLastSyncedAt, clearLastSyncedAt } from './lastSynced';
+import { SYNC_COPY } from './backupStatus';
+import { setSignInNotice } from '../auth/sessionNotice';
 
 export type { SyncOutcome } from './runSync';
 export type { SignInDecision } from './ownership';
@@ -37,12 +41,18 @@ export { mergeItems } from './runSync';
 async function isAuthenticated(): Promise<boolean> {
   const supabase = getSupabase();
   if (!supabase) return false;
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session !== null;
-  } catch {
-    return false;
-  }
+  // getSession refreshes an expired access token. If that refresh fails, the
+  // error is thrown so runSync can classify it (offline, or signed out).
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  if (!session) return false;
+  // The access token is checked locally and stays valid until it expires,
+  // even after the session is revoked or the user deleted. getUser asks the
+  // auth server, so either is caught on this sync rather than up to an hour
+  // later.
+  const { error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  return true;
 }
 
 async function isOwnedBySignedInUser(): Promise<boolean> {
@@ -70,7 +80,22 @@ const ports: SyncPorts = {
   cloudLoadItems,
   cloudLoadTombstones,
   afterMerge: rescheduleAllNotifications,
+  classifyError: classifySyncError,
 };
+
+/**
+ * Act on the outcome: record a successful backup, or end a session the
+ * server no longer accepts. Ending it is an involuntary sign-out, so nothing
+ * on the phone is wiped; the ownership rule decides at the next sign-in.
+ */
+async function afterSync(outcome: SyncOutcome): Promise<void> {
+  if (outcome === 'synced') {
+    await saveLastSyncedAt(new Date().toISOString()).catch(() => {});
+  } else if (outcome === 'signed-out') {
+    setSignInNotice(SYNC_COPY.signedOut);
+    await getSupabase()?.auth.signOut({ scope: 'local' }).catch(() => {});
+  }
+}
 
 /** Guards against overlapping runs — mutations can fire this rapidly. */
 let inFlight: Promise<SyncOutcome> | null = null;
@@ -78,7 +103,10 @@ let inFlight: Promise<SyncOutcome> | null = null;
 export async function syncNow(): Promise<SyncOutcome> {
   if (inFlight) return inFlight;
 
-  inFlight = runSync(ports);
+  inFlight = runSync(ports).then(async (outcome) => {
+    await afterSync(outcome);
+    return outcome;
+  });
   try {
     return await inFlight;
   } finally {
@@ -101,6 +129,7 @@ async function clearLocalData(): Promise<void> {
   await waitForSync();
   await clearItems();
   await clearQueue();
+  await clearLastSyncedAt();
   await cancelAllReminders();
 }
 

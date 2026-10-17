@@ -55,6 +55,9 @@ export type RootStackParamList = {
   Detail: { itemId: string };
   Account: undefined;
   ChangePassword: undefined;
+  ChangeEmail: undefined;
+  // Code sent to the new address; the screen is shared with the auth flow.
+  EnterCode: { email: string; purpose: 'email_change' };
 };
 
 // Auth flow navigation

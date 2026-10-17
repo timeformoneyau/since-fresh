@@ -10,6 +10,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { classifySyncError } from './classify.ts';
 import { runSync, mergeItems, type SyncPorts, type QueueSnapshot } from './runSync.ts';
 import type { SinceItem } from '../../types/index.ts';
 
@@ -28,6 +29,10 @@ function item(id: string, updatedAt: string): SinceItem {
     updatedAt,
   };
 }
+
+/** Shaped like auth-js's AuthRetryableFetchError (status 0). */
+const networkError = () =>
+  Object.assign(new Error('Network request failed'), { name: 'AuthRetryableFetchError', status: 0 });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const ids = (items: SinceItem[]) => items.map((i) => i.id).sort();
@@ -77,6 +82,7 @@ function harness(opts: { pushLatencyMs?: number } = {}) {
     cloudLoadItems: async () => clone(state.cloud),
     cloudLoadTombstones: async () => clone(state.tombstones),
     afterMerge: async (items) => { state.rescheduledWith = clone(items); },
+    classifyError: classifySyncError,
   };
 
   /** Mirrors what items/service.ts does: write locally, then enqueue. */
@@ -165,7 +171,7 @@ describe('runSync — failure and gating', () => {
   test('a failed push leaves local state and the queue intact', async () => {
     const h = harness();
     await h.mutateLocally(item('A', '2026-08-22T10:00:00.000Z'));
-    h.ports.cloudUpsertMany = async () => { throw new Error('offline'); };
+    h.ports.cloudUpsertMany = async () => { throw networkError(); };
 
     assert.equal(await runSync(h.ports), 'offline');
     assert.deepEqual(ids(h.state.local), ['A'], 'local data untouched');
@@ -238,5 +244,61 @@ describe('mergeItems — conflict rules', () => {
     const t = new Set(['d']);
     assert.deepEqual(mergeItems([item('d', '2026-09-01T00:00:00.000Z')], [], t), []);
     assert.deepEqual(mergeItems([], [item('d', '2026-09-01T00:00:00.000Z')], t), []);
+  });
+});
+
+// ─── Outcomes (F5) ───────────────────────────────────────────────────────────
+
+describe('runSync — each failure outcome leaves the queue intact', () => {
+  /** Session expired: shaped like an AuthApiError from the auth server. */
+  const sessionGone = () =>
+    Object.assign(new Error('Session not found'), {
+      name: 'AuthApiError', status: 403, code: 'session_not_found',
+    });
+  /** A schema or permission problem: shaped like a PostgrestError. */
+  const serverError = () =>
+    Object.assign(new Error('relation "items" does not exist'), { code: '42P01' });
+
+  const cases: Array<[string, () => unknown, 'offline' | 'signed-out' | 'error']> = [
+    ['network failure', networkError, 'offline'],
+    ['revoked session', sessionGone, 'signed-out'],
+    ['server error', serverError, 'error'],
+  ];
+
+  for (const [label, makeError, expected] of cases) {
+    for (const port of ['cloudUpsertMany', 'cloudLoadItems'] as const) {
+      test(`${label} in ${port} → '${expected}'`, async () => {
+        const h = harness();
+        await h.mutateLocally(item('A', '2026-08-22T10:00:00.000Z'));
+        await h.deleteLocally('B');
+        h.ports[port] = (async () => { throw makeError(); }) as never;
+
+        assert.equal(await runSync(h.ports), expected);
+        assert.deepEqual(ids(h.state.local), ['A'], 'local data untouched');
+        assert.deepEqual(h.state.queue, { upserts: ['A'], deletes: ['B'] }, 'queue intact');
+        assert.equal(h.state.rescheduledWith, null, 'nothing merged');
+      });
+    }
+  }
+
+  test('a session that fails to refresh is classified, not skipped', async () => {
+    const h = harness();
+    await h.mutateLocally(item('A', '2026-08-22T10:00:00.000Z'));
+    h.ports.isAuthenticated = async () => {
+      throw Object.assign(new Error('Invalid Refresh Token'), {
+        name: 'AuthApiError', status: 400, code: 'refresh_token_not_found',
+      });
+    };
+
+    assert.equal(await runSync(h.ports), 'signed-out');
+    assert.deepEqual(h.state.queue.upserts, ['A']);
+    assert.deepEqual(ids(h.state.local), ['A']);
+  });
+
+  test('a successful run reports synced', async () => {
+    const h = harness();
+    await h.mutateLocally(item('A', '2026-08-22T10:00:00.000Z'));
+    assert.equal(await runSync(h.ports), 'synced');
+    assert.deepEqual(h.state.queue.upserts, []);
   });
 });

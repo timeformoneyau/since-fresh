@@ -4,7 +4,7 @@
  * This module is transport only — it does not decide *when* to sync. That
  * belongs to domain/sync/engine.ts. Every function here assumes the caller
  * has confirmed cloud sync is configured and the user is authenticated, and
- * will throw otherwise; the sync engine treats those throws as "stay offline".
+ * will throw otherwise; the sync engine classifies those throws (classify.ts).
  */
 
 import { SinceItem, CompletionEvent, RepeatUnit } from '../../types';
@@ -53,7 +53,10 @@ function itemToRow(item: SinceItem, userId: string): ItemRow {
 }
 
 export async function currentUserId(): Promise<string> {
-  const { data: { user } } = await requireSupabase().auth.getUser();
+  // getUser asks the auth server, so a revoked session or deleted user
+  // surfaces here; throw its error so sync can classify it (classify.ts).
+  const { data: { user }, error } = await requireSupabase().auth.getUser();
+  if (error) throw error;
   if (!user) throw new Error('Not authenticated');
   return user.id;
 }

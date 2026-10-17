@@ -17,6 +17,8 @@ export const AUTH_COPY = {
   samePassword: "That's your current password. Choose a new one.",
   rateLimited: 'Too many tries. Wait a minute and try again.',
   badCode: "That code isn't right or has expired. Check it, or send a new one.",
+  invalidEmail: "That doesn't look like an email address. Check it and try again.",
+  emailInUse: 'That email is already used by another account.',
   network: "Couldn't reach the server. Check your connection.",
   fallback: 'Something went wrong. Please try again.',
 } as const;
@@ -32,6 +34,7 @@ const BY_CODE: Record<string, string> = {
   over_email_send_rate_limit: AUTH_COPY.rateLimited,
   // Supabase uses otp_expired for both expired and wrong codes.
   otp_expired: AUTH_COPY.badCode,
+  email_address_invalid: AUTH_COPY.invalidEmail,
 };
 
 type ErrorLike = { name?: unknown; code?: unknown; status?: unknown; message?: unknown };
@@ -42,7 +45,7 @@ export function authErrorCode(error: unknown): string | undefined {
   return typeof code === 'string' ? code : undefined;
 }
 
-function isNetworkError(error: unknown): boolean {
+export function isNetworkError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const e = error as ErrorLike;
   // auth-js wraps failed fetches in AuthRetryableFetchError with status 0;
@@ -53,8 +56,15 @@ function isNetworkError(error: unknown): boolean {
   );
 }
 
-export function friendlyAuthError(error: unknown): string {
+/**
+ * Copy for an auth error. Pass 'change-email' from the change-email flow,
+ * where "email already exists" means another account holds the new address.
+ */
+export function friendlyAuthError(error: unknown, context?: 'change-email'): string {
   const code = authErrorCode(error);
+  if (context === 'change-email' && (code === 'email_exists' || code === 'user_already_exists')) {
+    return AUTH_COPY.emailInUse;
+  }
   if (code && BY_CODE[code]) return BY_CODE[code];
   if (isNetworkError(error)) return AUTH_COPY.network;
   if (typeof error === 'object' && error !== null && (error as ErrorLike).status === 429) {
