@@ -11,7 +11,8 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../types';
-import { signIn } from '../../domain/auth/service';
+import { signIn, resendSignupCode } from '../../domain/auth/service';
+import { friendlyAuthError, authErrorCode } from '../../domain/auth/errors';
 import { colours } from '../../components/colours';
 import { authStyles as s } from './authStyles';
 
@@ -23,6 +24,8 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [unconfirmed, setUnconfirmed] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
 
   async function handleSignIn() {
     const trimmedEmail = email.trim().toLowerCase();
@@ -31,14 +34,31 @@ export default function SignInScreen() {
       return;
     }
     setError('');
+    setUnconfirmed(false);
     setLoading(true);
     try {
       await signIn(trimmedEmail, password);
       // The auth listener in App.tsx switches to the main navigator.
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Sign in failed. Please try again.');
+      setError(friendlyAuthError(e));
+      setUnconfirmed(authErrorCode(e) === 'email_not_confirmed');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSendCode() {
+    const trimmedEmail = email.trim().toLowerCase();
+    setSendingCode(true);
+    try {
+      await resendSignupCode(trimmedEmail);
+      setError('');
+      setUnconfirmed(false);
+      navigation.navigate('EnterCode', { email: trimmedEmail, purpose: 'signup' });
+    } catch (e) {
+      setError(friendlyAuthError(e));
+    } finally {
+      setSendingCode(false);
     }
   }
 
@@ -62,7 +82,7 @@ export default function SignInScreen() {
             <TextInput
               style={s.input}
               value={email}
-              onChangeText={(t) => { setEmail(t); setError(''); }}
+              onChangeText={(t) => { setEmail(t); setError(''); setUnconfirmed(false); }}
               placeholder="you@example.com"
               placeholderTextColor={colours.textMuted}
               keyboardType="email-address"
@@ -91,6 +111,17 @@ export default function SignInScreen() {
           </View>
 
           {error !== '' && <Text style={s.errorText}>{error}</Text>}
+
+          {unconfirmed && (
+            <TouchableOpacity
+              style={[s.primaryBtn, sendingCode && s.btnDisabled]}
+              onPress={handleSendCode}
+              disabled={sendingCode}
+              accessibilityRole="button"
+            >
+              <Text style={s.primaryBtnText}>{sendingCode ? 'Sending…' : 'Send a code'}</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[s.primaryBtn, loading && s.btnDisabled]}

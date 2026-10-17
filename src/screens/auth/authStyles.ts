@@ -49,6 +49,11 @@ export const authStyles = StyleSheet.create({
     fontSize: 15,
     color: colours.textPrimary,
   },
+  codeInput: {
+    fontSize: 22,
+    letterSpacing: 6,
+    textAlign: 'center',
+  },
   errorText: {
     fontSize: 13,
     color: colours.destructive,

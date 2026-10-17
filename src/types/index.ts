@@ -62,4 +62,11 @@ export type AuthStackParamList = {
   SignIn: undefined;
   SignUp: undefined;
   ForgotPassword: undefined;
+  EnterCode: { email: string; purpose: 'signup' | 'recovery' };
+};
+
+// Shown instead of the main app after a recovery code, until the new
+// password is saved (auth/recovery.ts)
+export type RecoveryStackParamList = {
+  SetNewPassword: undefined;
 };

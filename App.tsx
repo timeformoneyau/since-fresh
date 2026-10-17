@@ -7,11 +7,12 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import type { Session } from '@supabase/supabase-js';
 import { getSupabase, isCloudSyncConfigured } from './src/lib/supabase';
-import { RootStackParamList, AuthStackParamList } from './src/types';
+import { RootStackParamList, AuthStackParamList, RecoveryStackParamList } from './src/types';
 import { colours } from './src/components/colours';
 import { requestNotificationPermissions, rescheduleAllNotifications } from './src/notifications/scheduler';
 import { loadItems } from './src/domain/items/storage';
 import { reconcileDeviceOwnership, syncInBackground } from './src/domain/sync/engine';
+import { loadRecoveryPending, onRecoveryPendingChange } from './src/domain/auth/recovery';
 
 // App screens
 import MainListScreen from './src/screens/MainListScreen';
@@ -25,6 +26,8 @@ import ChangePasswordScreen from './src/screens/ChangePasswordScreen';
 import SignInScreen from './src/screens/auth/SignInScreen';
 import SignUpScreen from './src/screens/auth/SignUpScreen';
 import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
+import EnterCodeScreen from './src/screens/auth/EnterCodeScreen';
+import SetNewPasswordScreen from './src/screens/auth/SetNewPasswordScreen';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -38,6 +41,7 @@ Notifications.setNotificationHandler({
 
 const AppStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
+const RecoveryStack = createNativeStackNavigator<RecoveryStackParamList>();
 
 const stackOptions = {
   headerStyle: { backgroundColor: colours.background },
@@ -71,7 +75,16 @@ function AuthNavigator() {
       <AuthStack.Screen name="SignIn" component={SignInScreen} />
       <AuthStack.Screen name="SignUp" component={SignUpScreen} />
       <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <AuthStack.Screen name="EnterCode" component={EnterCodeScreen} />
     </AuthStack.Navigator>
+  );
+}
+
+function RecoveryNavigator() {
+  return (
+    <RecoveryStack.Navigator screenOptions={{ ...stackOptions, headerShown: false }}>
+      <RecoveryStack.Screen name="SetNewPassword" component={SetNewPasswordScreen} />
+    </RecoveryStack.Navigator>
   );
 }
 
@@ -79,6 +92,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(isCloudSyncConfigured());
   const [reconciling, setReconciling] = useState(false);
+  const [recoveryPending, setRecoveryPending] = useState(false);
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -90,6 +104,8 @@ export default function App() {
       if (supabase) {
         const { data: { session: s } } = await supabase.auth.getSession();
         if (s) await reconcileDeviceOwnership(s.user.id);
+        // A restart mid-recovery still lands on "Set a new password".
+        setRecoveryPending(s !== null && (await loadRecoveryPending()));
         setSession(s);
         setLoading(false);
       }
@@ -104,9 +120,13 @@ export default function App() {
 
     if (!supabase) return; // Local-only build: no auth gate at all.
 
+    const unsubscribeRecovery = onRecoveryPendingChange(setRecoveryPending);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
-      if (event === 'SIGNED_IN' && s) {
+      // A recovery code signs in with PASSWORD_RECOVERY rather than SIGNED_IN;
+      // the ownership rule applies to both.
+      if ((event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') && s) {
         // Adopt, resume or replace the local list (ownership.ts), then sync.
         // Hold the list back until the local part is done.
         setReconciling(true);
@@ -121,7 +141,10 @@ export default function App() {
       // ownership rule decides at the next sign-in.
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      unsubscribeRecovery();
+    };
   }, []);
 
   if (loading || reconciling) {
@@ -135,11 +158,14 @@ export default function App() {
   // When cloud sync is not configured the app runs entirely local-first, with
   // no sign-in step. Sync and auth are additive, never a prerequisite.
   const showApp = !isCloudSyncConfigured() || session !== null;
+  // After a recovery code there is a session, but the user stays on "Set a
+  // new password" until it is saved (auth/recovery.ts).
+  const showRecovery = showApp && session !== null && recoveryPending;
 
   return (
     <SafeAreaProvider>
       <NavigationContainer>
-        {showApp ? <AppNavigator /> : <AuthNavigator />}
+        {showRecovery ? <RecoveryNavigator /> : showApp ? <AppNavigator /> : <AuthNavigator />}
       </NavigationContainer>
     </SafeAreaProvider>
   );

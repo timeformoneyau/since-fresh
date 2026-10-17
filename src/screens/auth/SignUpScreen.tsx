@@ -12,12 +12,11 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../types';
 import { signUp } from '../../domain/auth/service';
+import { friendlyAuthError, MIN_PASSWORD_LENGTH } from '../../domain/auth/errors';
 import { colours } from '../../components/colours';
 import { authStyles as s } from './authStyles';
 
 type Nav = NativeStackNavigationProp<AuthStackParamList, 'SignUp'>;
-
-const MIN_PASSWORD_LENGTH = 6;
 
 export default function SignUpScreen() {
   const navigation = useNavigation<Nav>();
@@ -25,7 +24,6 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [confirmationSent, setConfirmationSent] = useState(false);
 
   async function handleSignUp() {
     const trimmedEmail = email.trim().toLowerCase();
@@ -42,30 +40,14 @@ export default function SignUpScreen() {
     try {
       const { needsConfirmation } = await signUp(trimmedEmail, password);
       if (needsConfirmation) {
-        setConfirmationSent(true);
+        navigation.navigate('EnterCode', { email: trimmedEmail, purpose: 'signup' });
       }
       // Otherwise the auth listener in App.tsx takes over.
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Sign up failed. Please try again.');
+      setError(friendlyAuthError(e));
     } finally {
       setLoading(false);
     }
-  }
-
-  if (confirmationSent) {
-    return (
-      <ScrollView contentContainerStyle={s.container} style={s.flex}>
-        <Text style={s.appName}>Since</Text>
-        <Text style={s.heading}>Check your email</Text>
-        <Text style={s.subheading}>
-          We've sent a confirmation link to {email.trim().toLowerCase()}. Open it to
-          finish setting up your account, then come back and sign in.
-        </Text>
-        <TouchableOpacity style={s.primaryBtn} onPress={() => navigation.navigate('SignIn')}>
-          <Text style={s.primaryBtnText}>Back to sign in</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    );
   }
 
   return (
