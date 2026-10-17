@@ -17,7 +17,7 @@ interface Props {
   onMarkDone: (item: SinceItem) => void;
   onEdit: (item: SinceItem) => void;
   onDelete: (item: SinceItem) => void;
-  /** Opens the item's completion history. Omitted for expiry-mode items. */
+  /** Opens the item's completion history. */
   onPress?: (item: SinceItem) => void;
 }
 

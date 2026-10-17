@@ -33,19 +33,10 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Since uses the camera to read expiry dates off food packaging."
-        }
-      ]
-    ],
     "extra": {
       "eas": {
         "projectId": "3c35d81c-5a3e-4fd8-99a9-e6c95441f721"
       },
-      "expiryApiUrl": "https://since-proxy.vercel.app/api/parse-expiry",
       "supabaseUrl": "https://iiuxkzhbefiqckekjntl.supabase.co",
       "supabaseAnonKey": "sb_publishable_ZWvQ_ccf76_fDd0MyLZ6Xg_rtt2_c2O"
     },

@@ -43,17 +43,12 @@ export async function getDerivedItemById(itemId: string): Promise<DerivedItem | 
 /**
  * Create a new item, persist it, and schedule its notifications.
  *
- * Repeat-mode items are seeded with an initial completion event so the log
- * starts from the date the user says it was last done. Expiry-mode items
- * (scanned food) start with an empty history — they are replaced by the next
- * scan rather than accumulating completions.
+ * Every item is seeded with an initial completion event so the log starts
+ * from the date the user says it was last done.
  */
 export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
   const now = new Date().toISOString();
-  const expiryDate = input.expiryDate ?? null;
-  const history: CompletionEvent[] = expiryDate
-    ? []
-    : [{ id: generateId(), date: input.lastDoneDate }];
+  const history: CompletionEvent[] = [{ id: generateId(), date: input.lastDoneDate }];
   const item: SinceItem = {
     id: generateId(),
     name: input.name,
@@ -62,8 +57,6 @@ export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
     history,
     repeatValue: input.repeatValue,
     repeatUnit: input.repeatUnit,
-    expiryDate,
-    source: input.source ?? 'manual',
     createdAt: now,
     updatedAt: now,
   };
@@ -106,15 +99,8 @@ export async function updateItem(itemId: string, updates: UpdateItemInput): Prom
 /**
  * Mark an item as done today (or on a specific date).
  *
- * Two distinct behaviours, decided by the item's state *before* the mutation:
- *
- *   Expiry-mode (a scanned food item): clear the expiry back to manual — the
- *   next instance of the food needs a fresh scan rather than reusing a stale
- *   date — and do NOT append to history. A scan replaces the previous state
- *   rather than adding to it, so food carries no completion log.
- *
- *   Repeat-mode (everything else): prepend a completion event. This is the
- *   only path that grows the history log.
+ * Prepends a completion event. This is the only path that grows the history
+ * log.
  */
 export async function markItemDone(itemId: string, doneDate?: string): Promise<DerivedItem> {
   const date = doneDate ?? todayString();
@@ -122,16 +108,10 @@ export async function markItemDone(itemId: string, doneDate?: string): Promise<D
   const existing = items.find((i) => i.id === itemId);
   if (!existing) throw new Error(`Item not found: ${itemId}`);
 
-  const wasExpiryMode = existing.expiryDate !== null;
-
   const updated: SinceItem = {
     ...existing,
     lastDoneDate: date,
-    history: wasExpiryMode
-      ? existing.history
-      : [{ id: generateId(), date }, ...existing.history],
-    expiryDate: null,
-    source: 'manual',
+    history: [{ id: generateId(), date }, ...existing.history],
     updatedAt: new Date().toISOString(),
   };
 

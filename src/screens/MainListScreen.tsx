@@ -121,12 +121,6 @@ export default function MainListScreen() {
             >
               <Text style={styles.primaryCTAText}>Add something</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.secondaryCTA}
-              onPress={() => navigation.navigate('ScanFood')}
-            >
-              <Text style={styles.secondaryCTAText}>📷 Scan food</Text>
-            </TouchableOpacity>
           </View>
 
           <Text style={styles.quickStartLabel}>Quick start</Text>
@@ -166,15 +160,6 @@ export default function MainListScreen() {
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            style={styles.scanBtn}
-            onPress={() => navigation.navigate('ScanFood')}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityLabel="Scan food"
-            accessibilityRole="button"
-          >
-            <Text style={styles.scanBtnText}>📷</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={styles.addBtn}
             onPress={() => navigation.navigate('Add')}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -197,7 +182,7 @@ export default function MainListScreen() {
             onMarkDone={handleMarkDone}
             onEdit={handleEdit}
             onDelete={handleDelete}
-            onPress={item.expiryDate ? undefined : handleOpenDetail}
+            onPress={handleOpenDetail}
           />
         )}
         renderSectionHeader={({ section }) => (
@@ -261,20 +246,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  secondaryCTA: {
-    backgroundColor: colours.surface,
-    borderWidth: 1,
-    borderColor: colours.border,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
-  },
-  secondaryCTAText: {
-    color: colours.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
   quickStartLabel: {
     fontSize: 12,
     fontWeight: '500',
@@ -319,19 +290,6 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     gap: 10,
-  },
-  scanBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colours.surface,
-    borderWidth: 1,
-    borderColor: colours.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scanBtnText: {
-    fontSize: 16,
   },
   addBtn: {
     width: 36,

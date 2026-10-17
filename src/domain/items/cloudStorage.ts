@@ -7,7 +7,7 @@
  * will throw otherwise; the sync engine treats those throws as "stay offline".
  */
 
-import { SinceItem, CompletionEvent, RepeatUnit, ItemSource } from '../../types';
+import { SinceItem, CompletionEvent, RepeatUnit } from '../../types';
 import { requireSupabase } from '../../lib/supabase';
 
 interface ItemRow {
@@ -19,8 +19,6 @@ interface ItemRow {
   history: unknown;
   repeat_value: number | null;
   repeat_unit: string | null;
-  expiry_date: string | null;
-  source: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -34,8 +32,6 @@ function rowToItem(row: ItemRow): SinceItem {
     history: Array.isArray(row.history) ? (row.history as CompletionEvent[]) : [],
     repeatValue: row.repeat_value,
     repeatUnit: row.repeat_unit as RepeatUnit | null,
-    expiryDate: row.expiry_date,
-    source: (row.source as ItemSource | null) ?? 'manual',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -51,8 +47,6 @@ function itemToRow(item: SinceItem, userId: string): ItemRow {
     history: item.history,
     repeat_value: item.repeatValue,
     repeat_unit: item.repeatUnit,
-    expiry_date: item.expiryDate,
-    source: item.source,
     created_at: item.createdAt,
     updated_at: item.updatedAt,
   };

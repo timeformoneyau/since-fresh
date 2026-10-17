@@ -1,8 +1,6 @@
 export type RepeatUnit = 'days' | 'weeks' | 'months' | 'years';
 
-export type ItemSource = 'manual' | 'photo';
-
-/** A single logged completion. Repeat-mode items only — see SinceItem.history. */
+/** A single logged completion. */
 export interface CompletionEvent {
   id: string;
   date: string; // ISO date string (YYYY-MM-DD)
@@ -16,19 +14,10 @@ export interface SinceItem {
   /**
    * Completion log, newest first. When non-empty, history[0].date mirrors
    * lastDoneDate.
-   *
-   * Scoped to repeat-mode items by design: an expiry-mode item (scanned food)
-   * is replaced by the next scan rather than accumulating completions, so it
-   * carries an empty history. Marking a food item done therefore clears the
-   * expiry back to manual without appending an event.
    */
   history: CompletionEvent[];
   repeatValue: number | null;
   repeatUnit: RepeatUnit | null;
-  // When set, this is the due date directly (e.g. a food expiry date read
-  // from a photo) and takes priority over lastDoneDate + repeat interval.
-  expiryDate: string | null; // ISO date string (YYYY-MM-DD)
-  source: ItemSource;
   createdAt: string;
   updatedAt: string;
 }
@@ -55,26 +44,15 @@ export const DEFAULT_CATEGORIES = [
   'Family',
   'Admin',
   'Purchases',
-  'Food',
   'Other',
 ] as const;
-
-/** Prefill passed from ScanFoodScreen into AddItemScreen after a successful scan. */
-export interface AddScreenPrefill {
-  name: string;
-  category: string;
-  expiryDate: string | null;
-  source: ItemSource;
-  lowConfidence: boolean;
-}
 
 // Main app navigation
 export type RootStackParamList = {
   Main: undefined;
-  Add: { prefill?: AddScreenPrefill } | undefined;
+  Add: undefined;
   Edit: { itemId: string };
   Detail: { itemId: string };
-  ScanFood: undefined;
   Account: undefined;
   ChangePassword: undefined;
 };

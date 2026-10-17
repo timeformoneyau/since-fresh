@@ -24,8 +24,6 @@ function item(id: string, updatedAt: string): SinceItem {
     history: [],
     repeatValue: null,
     repeatUnit: null,
-    expiryDate: null,
-    source: 'manual',
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt,
   };

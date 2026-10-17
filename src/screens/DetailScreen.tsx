@@ -94,11 +94,7 @@ export default function DetailScreen() {
       <Text style={styles.sectionLabel}>History</Text>
 
       {sorted.length === 0 ? (
-        <Text style={styles.emptyHistory}>
-          {item.expiryDate
-            ? 'Food items are replaced by the next scan rather than building up a history.'
-            : 'No completions logged yet.'}
-        </Text>
+        <Text style={styles.emptyHistory}>No completions logged yet.</Text>
       ) : (
         sorted.map((event, i) => {
           const next = sorted[i + 1];

@@ -1,15 +1,16 @@
-import { SinceItem, CompletionEvent } from '../../types';
+import type { SinceItem, CompletionEvent } from '../../types';
 
 /**
  * v1 — { version, items } envelope with expiryDate/source.
  * v2 — adds the `history` completion log (repeat-mode items only).
+ * v3 — food tracking removed: expiryDate/source dropped, every item has history.
  *
  * Note: the pre-consolidation `since` codebase also wrote version 1, with a
  * different shape (history but no expiryDate/source). Version number alone
  * therefore cannot identify a payload, so hydrate() discriminates on field
  * presence rather than trusting the envelope version.
  */
-export const STORAGE_VERSION = 2;
+export const STORAGE_VERSION = 3;
 
 interface StorageEnvelope {
   version: number;
@@ -68,37 +69,36 @@ export function parseAndMigrate(raw: string): SinceItem[] {
   return candidates.filter(isValidItem).map(hydrate);
 }
 
+/** Fields written by v1/v2 that no longer exist on SinceItem. */
+type LegacyItem = SinceItem & { expiryDate?: string | null; source?: string };
+
 /**
  * Bring a stored item up to the current SinceItem shape.
  *
  * Handles payloads written by any prior version, including those from the
- * legacy `since` codebase, by filling in whichever fields are absent:
+ * legacy `since` codebase:
  *
- *   - expiryDate / source (added in v1 here, never existed in `since`)
- *   - history (added in v2 here, existed in `since` from the start)
- *
- * History is seeded from lastDoneDate for repeat-mode items so an existing
- * user sees at least one entry. Expiry-mode items get an empty history by
- * design — food is replaced by the next scan, not logged.
+ *   - history (added in v2 here, existed in `since` from the start) is seeded
+ *     from lastDoneDate when absent, so an existing user sees one entry.
+ *   - expiryDate / source (v1–v2, food tracking) are stripped. An item that
+ *     still has an expiryDate was a scanned food item; it becomes a
+ *     tracked-only item (no repeat interval, history seeded if empty) rather
+ *     than being dropped.
  */
-function hydrate(item: SinceItem): SinceItem {
-  const expiryDate = item.expiryDate ?? null;
+function hydrate(stored: SinceItem): SinceItem {
+  const { expiryDate, source: _source, ...item } = stored as LegacyItem;
+  const seed: CompletionEvent[] = [{ id: `${item.id}_seed`, date: item.lastDoneDate }];
+  const history = Array.isArray(item.history) ? item.history : seed;
 
-  let history: CompletionEvent[];
-  if (Array.isArray(item.history)) {
-    history = item.history;
-  } else if (expiryDate) {
-    history = [];
-  } else {
-    history = [{ id: `${item.id}_seed`, date: item.lastDoneDate }];
+  if (expiryDate) {
+    return {
+      ...item,
+      history: history.length > 0 ? history : seed,
+      repeatValue: null,
+      repeatUnit: null,
+    };
   }
-
-  return {
-    ...item,
-    history,
-    expiryDate,
-    source: item.source ?? 'manual',
-  };
+  return { ...item, history };
 }
 
 export function toEnvelope(items: SinceItem[]): string {

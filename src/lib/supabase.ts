@@ -6,8 +6,7 @@ import Constants from 'expo-constants';
 /**
  * Supabase client, created lazily.
  *
- * Credentials live in app.json → extra (matching how the expiry proxy is
- * configured), not in a committed source file. When they are absent the app
+ * Credentials live in app.json → extra, not in a committed source file. When they are absent the app
  * runs fully local-only: isCloudSyncConfigured() returns false, the auth gate
  * is skipped, and the sync engine no-ops. Nothing here throws on a missing
  * config — local-first means the cloud is always optional.

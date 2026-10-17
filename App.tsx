@@ -18,7 +18,6 @@ import MainListScreen from './src/screens/MainListScreen';
 import AddItemScreen from './src/screens/AddItemScreen';
 import EditItemScreen from './src/screens/EditItemScreen';
 import DetailScreen from './src/screens/DetailScreen';
-import ScanFoodScreen from './src/screens/ScanFoodScreen';
 import AccountScreen from './src/screens/AccountScreen';
 import ChangePasswordScreen from './src/screens/ChangePasswordScreen';
 
@@ -56,11 +55,6 @@ function AppNavigator() {
       <AppStack.Screen name="Add" component={AddItemScreen} options={{ title: 'Track something' }} />
       <AppStack.Screen name="Edit" component={EditItemScreen} options={{ title: 'Edit' }} />
       <AppStack.Screen name="Detail" component={DetailScreen} options={{ title: 'History' }} />
-      <AppStack.Screen
-        name="ScanFood"
-        component={ScanFoodScreen}
-        options={{ title: 'Scan food', headerShown: false }}
-      />
       <AppStack.Screen name="Account" component={AccountScreen} options={{ title: 'Account' }} />
       <AppStack.Screen
         name="ChangePassword"
