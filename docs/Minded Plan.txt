@@ -1,0 +1,199 @@
+Since — Accounts & Backend Build Plan
+Oct 17, 2026 · @Michael
+Summary
+Most of the account system is already written; what's missing is the part that makes it safe and usable on a real phone. Since has Supabase auth, sign-up, sign-in, change password, delete account and an offline-first sync engine with 11 passing tests. Four defects stand between that and a releasable account system:
+1. Password reset and email confirmation send links the app can't open.
+2. Signing out and signing in as someone else uploads the first person's items into the second account.
+3. Item IDs are unique across the whole database, not per user, so that same case can jam sync permanently.
+4. Every sync failure is reported as "offline", so an expired session or a server error is invisible.
+The plan first removes food tracking from Minded, since it now belongs to UseBy. It then fixes the four blockers and completes account management: change email, a reliable delete, and honest sync status. There are 6 phases; Phase 0 is dashboard settings only Michael can change.
+Reviewed: timeformoneyau/since-fresh (main, identical to consolidation, last commit 2 Oct 2026) and timeformoneyau/since-proxy (master).
+What's already built
+The foundations are sound and should be kept, not rebuilt.
+Area
+What exists
+Where
+Database
+items and deleted_items tables, row-level security so each user sees only their own rows, a delete_user() function
+supabase/schema.sql
+Auth wiring
+Supabase client with session stored on device and auto-refresh; app switches between sign-in and main screens on auth state
+src/lib/supabase.ts, App.tsx
+Auth actions
+Sign up, sign in, sign out, reset email, change password, get user, delete account
+src/domain/auth/service.ts
+Screens
+Sign in, Sign up (with "check your email" state), Forgot password, Account, Change password
+src/screens/auth/, src/screens/AccountScreen.tsx
+Sync
+Offline-first: every change saves on the phone first, a queue records it, background sync pushes and pulls; last edit wins; deletions carried by tombstones
+src/domain/sync/
+Tests
+11 tests on the sync ordering rules, all passing; TypeScript compiles clean
+src/domain/sync/runSync.test.ts
+The sync design is the strongest part: it already handles the hard cases (an edit made mid-sync, a delete that hasn't uploaded yet, a failed push) and keeps that logic in a pure, tested module.
+One correction to earlier notes: the sign-in gate is not deferred. Because the Supabase URL and key are in app.json, a fresh install today lands on Sign in with no way to skip it.
+Findings, ranked
+Four findings block a release; the rest are completeness gaps. Severity reflects what a real user would hit, not code tidiness.
+#
+Severity
+Finding
+Evidence
+Fix
+F1
+Blocker
+Password reset can't be completed. The email link has no app destination and nothing in the app handles it.
+resetPasswordForEmail(email) with no redirectTo; no deep-link handling; detectSessionInUrl: false; no screen listens for the recovery event
+Send a 6-digit code instead of a link; user types it into the app, then sets a new password
+F2
+Blocker
+Sign-up confirmation link lands on a web page, not the app. The account confirms, but the user is stranded and must find their way back.
+Same cause as F1
+Same fix: confirm with a 6-digit code typed in-app
+F3
+Blocker
+Items leak between accounts on one phone. Sign-out keeps items, queue and reminders on the device; the next sign-in uploads them all into the new account.
+signOut() touches nothing local; adoptLocalItemsIntoAccount() runs on every SIGNED_IN and enqueues every local item. Delete account says items "stay here" for the same reason
+Record which account owns the phone's data; clear local data on sign-out after a final sync; only adopt items that belong to no one
+F4
+Blocker
+Sync can jam forever. Item ID is the table's whole primary key, so two users can't hold the same ID. In the F3 case the second user's upload hits the first user's row, row-level security rejects it, the batch fails, and every later sync fails the same way
+id text primary key in items; upsert(rows) with no conflict target; any error returns 'offline' and keeps the queue
+Primary key (user_id, id); upsert on that pair; switch new IDs to UUIDs
+F5
+High
+All sync failures look like "offline". An expired session, a deleted account or a schema error is indistinguishable from no signal.
+runSync catch-all returns 'offline'
+Classify: offline, signed-out, server error; show it on Account; sign out cleanly on an invalid session
+F6
+High
+Account deletion is untested and leaves data behind. The database function deletes from the auth tables directly, which is a known pattern but depends on project permissions. Local items survive and would be adopted by the next sign-in (F3)
+delete_user() security-definer SQL; briefing records no end-to-end test
+Test it against the real project; on success wipe local data and reminders; fall back to a server function if the SQL route fails
+F7
+High
+Google Play requires a web link where users can request account deletion, separate from the in-app button
+Nothing exists
+Add a simple deletion-request page to since-proxy (already a Next.js site)
+F8
+High
+The built-in Supabase email sender is for testing only and heavily rate-limited
+No custom mail provider recorded
+Connect a mail provider (e.g. Resend) before anyone outside testing signs up
+F9
+Medium
+Raw Supabase errors reach the user ("Invalid login credentials", "Email not confirmed"), off-voice and sometimes unhelpful
+Screens show e.message
+Map known errors to plain copy; "Email not confirmed" offers to resend the code
+F10
+Medium
+No change-email flow
+Not in service or screens
+Add with code confirmation
+F11
+Medium
+Password minimum is 6 characters
+MIN_PASSWORD_LENGTH = 6 in two screens
+Raise to 8 in the app and in Supabase settings
+F12
+Medium
+Food tracking is still built into Minded, though it now belongs to UseBy: the scan screen, calls to since-proxy, the camera permission, a shared secret in every build, and an expiry-date mode running through the data model, status logic, sync and database
+app.config.js; ScanFoodScreen, expiryApi.ts, expo-camera plugin; expiryDate and source in 14 files; expiry_date and source columns
+Remove food from Minded (Phase 1)
+F13
+Low
+Sync pulls every item and every tombstone each time; tombstones are never pruned; last-edit-wins trusts phone clocks
+cloudLoadItems() selects all
+Fine at personal scale; revisit past a few thousand items per user
+Decisions needed before building
+D1 is decided; the other three have clear defaults.
+D1. Is an account required to use the app? Decided: optional, with an account needed only to back up and sync the list.
+• Optional matches what's built: the sync engine and the code comments all assume the app works signed-out. Today the gate is mandatory only because the keys are present.
+• Asking for an email before anyone has tracked one thing adds friction at the worst moment, and cuts against "we've got it".
+• The reason to sign up is concrete: your list is backed up and follows you to a new phone.
+• Trade-off accepted: two states to support (signed in and signed out), the adoption rule in Phase 2, and a list that is lost with the phone if the user never signs up.
+D2. Email links or 6-digit codes? Recommended: codes. They work in Expo Go and in builds, need no deep-link setup, and can't land on a broken web page. Links remain possible later.
+D3. What happens to items on sign-out? Recommended: sync, then remove them from the phone. The cloud copy is the backup; leaving them invites F3. If unsynced changes remain after a final sync attempt, warn before removing.
+D4. How to delete accounts? Recommended: keep the existing database function if a real test passes; otherwise move to a small server function using Supabase's admin API.
+Build plan
+Food comes out first so the account work is built on the smaller data model and one database migration covers both changes. Phases 2 and 3 then close the four blockers, Phase 4 completes account management, and Phase 5 makes signing in optional. Each phase ends in a state that can be tested on a phone.
+Phase 0 — Backend settings (Michael, Supabase dashboard, about an hour)
+[ ] Confirm schema.sql is applied: both tables exist with row-level security on
+[ ] Auth settings: email confirmation on, minimum password 8, leaked-password check on if the plan allows it
+[ ] Email templates for Confirm signup, Reset password and Change email show the 6-digit code ({{ .Token }}) rather than only a link
+[ ] Connect a custom SMTP provider and a sending domain
+Phase 1 — Remove food from Minded (fixes F12)
+• Delete the ScanFood screen, src/services/expiryApi.ts, the camera buttons in the main list header and empty state, and the scan prefill and confidence banners in Add
+• Remove the expo-camera plugin and permission, expiryApiUrl, and the EXPIRY_API_SECRET injection in app.config.js; since-proxy then serves UseBy only
+• Data model: drop expiryDate and source from SinceItem; drop the expiry branch and the 3-day food window from status logic; drop the expiry branches in markItemDone, createItem, Edit and Detail; drop Food from the default categories
+• Local data: the storage migration turns any leftover expiry items into tracked-only items so nothing vanishes silently
+• Database: drop the expiry_date and source columns in the same migration as Phase 2's key change
+Phase 2 — Data integrity (fixes F3, F4)
+• Migration: primary keys on items and deleted_items become (user_id, id); upserts name that pair as the conflict target
+• New item IDs use UUIDs; existing IDs stay valid
+• Store the owning account ID on the phone alongside the items
+• Sign-in rule: items with no owner are adopted; items owned by a different account are never uploaded
+• Sign-out: final sync, then clear items, queue, owner and scheduled reminders (D3)
+• Delete account: same local wipe after the server delete succeeds
+• Tests: extend the existing pure-logic tests with the account-switch cases
+Phase 3 — Email flows that work on a phone (fixes F1, F2, F9, F11)
+• New "Enter your code" screen, shared by sign-up confirmation and password reset (verifyOtp)
+• After a recovery code, a "Set a new password" screen, then into the app
+• "Resend code" with a cooldown; "Email not confirmed" on sign-in routes to the code screen
+• One error-mapping helper turning Supabase errors into plain, calm copy
+• Password minimum 8, shared constant
+Phase 4 — Account management (fixes F5, F6, F7, F10)
+• Change email, confirmed by code to the new address
+• Sync outcomes split into synced / offline / signed-out / error; Account shows the last successful sync time and a plain message for each
+• An invalid or expired session signs the user out cleanly instead of failing silently
+• Verify delete_user() end to end; replace with a server function if it fails (D4)
+• Account-deletion request page for the Play listing, on any small web host (the Vercel account already in use is enough)
+Phase 5 — Optional accounts (D1)
+• A fresh install opens straight to the list; the sign-in screens appear only when the user chooses to back up
+• Account button on the main list reads "Back up your list" when signed out, "Account" when signed in
+• Sign-in and sign-up screens gain a way back to the list without signing in
+• Signed out, sync stays off and nothing leaves the phone
+Test plan and definition of done
+The account system is done when every scenario below passes on a real Android build against the live Supabase project, and npm test covers the Phase 1 rules.
+#
+Scenario
+Expected result
+T1
+New user signs up, enters the emailed code
+Signed in, lands on the list
+T2
+Track 3 items signed out, then sign up (D1 optional)
+All 3 appear in the account and on a second phone
+T3
+Forgot password, enter code, set new password
+Signed in with the new password; old one rejected
+T4
+Edit an item offline, reconnect
+Change reaches the cloud without a manual sync
+T5
+Delete an item on phone A
+Gone from phone B after its next sync, not resurrected
+T6
+User A signs out, user B signs in on the same phone
+B sees only B's items; A's items not in B's account; A's reminders gone
+T7
+Change email, confirm code at the new address
+Sign-in works with the new address only
+T8
+Delete account
+Cloud rows gone, local items and reminders cleared, sign-in with old details fails
+T9
+Revoke the session from the Supabase dashboard
+App signs out cleanly on next sync; Account shows why
+T10
+Sign in with a wrong password; with an unconfirmed email
+Plain-language message; unconfirmed routes to the code screen
+T11
+Open the app after Phase 1
+No scan buttons, no Food category, no camera permission prompt; any old food items show as tracked only
+Open questions and confidence
+The code findings are verified by reading and running the code; the live backend is not.
+• Live Supabase project not checked. It couldn't be reached from the review environment, so whether the schema is applied, which auth settings are on and whether delete_user() works are unconfirmed. Phase 0 settles all three.
+• Store requirements are from general knowledge, not re-checked against current Google Play and Apple policy pages. Confirm the deletion-URL rule in Play Console's Data safety section before submission.
+• Is there real data in the cloud yet? If any test accounts hold items, the migration must preserve them; if not, it can simply recreate the tables.
+• UseBy inherits two items from here. Its sync and auth code was copied from this repo, so F3 and F4 likely exist there too. The scanning secret still in public git history is now UseBy's to rotate.
