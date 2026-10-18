@@ -1,10 +1,10 @@
 name: Release
 
-# Runs after every merge to main:
-#   1. tsc + domain + component tests again (never publish on red)
-#   2. preview  - always, automatically
-#   3. production - automatically for AUTOMATIC changes; for GATED changes it
-#      waits for the owner to approve the "production-gated" deployment
+# Runs after every merge to main, fully automatically (no approvals):
+#   1. the merged PR's checks must all have passed (CI, Android flows, Data
+#      safety), and tsc + domain + component tests run again: never publish on red
+#   2. preview
+#   3. production, once preview has published
 # Each step publishes an EAS Update, or starts an EAS build when the change is
 # native (see .github/scripts/release.sh), and comments on the merged PR.
 on:
@@ -18,7 +18,7 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
-  actions: read   # to read the production-gated environment's reviewers
+  checks: read   # to confirm the merged PR's checks passed
 
 jobs:
   checks:
@@ -37,33 +37,37 @@ jobs:
       - run: npm test
       - run: npm run test:ui -- --ci
 
-  classify:
-    name: Classify the merged change
+  verify:
+    name: Confirm the merged PR passed every check
     runs-on: ubuntu-latest
     outputs:
-      gated: ${{ steps.c.outputs.gated }}
-      pr: ${{ steps.c.outputs.pr }}
+      pr: ${{ steps.v.outputs.pr }}
     steps:
-      - id: c
+      - id: v
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           PR_JSON=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" --jq '.[0] // {}')
           PR=$(echo "$PR_JSON" | jq -r '.number // empty')
-          LABELS=$(echo "$PR_JSON" | jq -c '[.labels[]?.name]')
-          # Only an explicit "automatic" (and no "gated") skips the human gate
-          if echo "$LABELS" | jq -e 'index("automatic") != null and index("gated") == null' > /dev/null; then
-            GATED=false
-          else
-            GATED=true
+          HEAD=$(echo "$PR_JSON" | jq -r '.head.sha // empty')
+          if [ -z "$PR" ]; then
+            echo "::error::This commit didn't come from a pull request, so its checks never ran. Nothing is published."; exit 1
           fi
-          echo "PR #${PR:-none}, labels $LABELS -> gated=$GATED"
-          echo "gated=$GATED" >> "$GITHUB_OUTPUT"
           echo "pr=$PR" >> "$GITHUB_OUTPUT"
+          # Latest result of each check on the PR's last commit
+          RUNS=$(gh api "repos/${{ github.repository }}/commits/$HEAD/check-runs?per_page=100" \
+            --jq '[.check_runs[] | {name, conclusion, at: (.completed_at // .started_at)}] | sort_by(.at) | reverse')
+          failed=0
+          for check in "Type check and tests" "Android flows (Maestro)" "Data safety"; do
+            result=$(echo "$RUNS" | jq -r --arg n "$check" '[.[] | select(.name == $n)][0].conclusion // "missing"')
+            echo "PR #$PR, $check: $result"
+            [ "$result" = success ] || { echo "::error::'$check' did not pass on PR #$PR ($result). Nothing is published."; failed=1; }
+          done
+          exit $failed
 
   preview:
     name: Publish to preview
-    needs: [checks, classify]
+    needs: [checks, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: preview
@@ -90,35 +94,20 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          PR: ${{ needs.classify.outputs.pr }}
-          GATED: ${{ needs.classify.outputs.gated }}
+          PR: ${{ needs.verify.outputs.pr }}
         run: |
-          [ -f release-summary.md ] || echo "### ❌ preview: publishing failed. See the Release run log." > release-summary.md
-          if [ "$GATED" = "true" ]; then
-            printf '\n**GATED change:** production waits for your OK. Try it in *Since (preview)*, then open the Release run and click **Review deployments → Approve**.\n' >> release-summary.md
-          fi
+          [ -f release-summary.md ] || echo "### ❌ preview: publishing failed, so production was not touched. See the Release run log." > release-summary.md
           cat release-summary.md >> "$GITHUB_STEP_SUMMARY"
           [ -z "$PR" ] || gh pr comment "$PR" --repo "${{ github.repository }}" --body-file release-summary.md
 
   production:
     name: Publish to production
-    needs: [preview, classify]
+    # Runs only once preview has published; no approval step
+    needs: [preview, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # GATED changes wait here for the owner's approval (required reviewer on
-    # the production-gated environment). AUTOMATIC changes go straight through.
-    environment: ${{ needs.classify.outputs.gated == 'true' && 'production-gated' || 'production' }}
+    environment: production
     steps:
-      - name: Refuse if the production gate has no reviewer
-        if: needs.classify.outputs.gated == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          N=$(gh api "repos/${{ github.repository }}/environments/production-gated" \
-            --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length' || echo 0)
-          if [ "$N" -lt 1 ]; then
-            echo "::error::The production-gated environment has no required reviewer, so nothing would stop a GATED change. Set it up (RELEASING.md, 'One-time setup'), then re-run this job."; exit 1
-          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -134,7 +123,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          PR: ${{ needs.classify.outputs.pr }}
+          PR: ${{ needs.verify.outputs.pr }}
         run: |
           [ -f release-summary.md ] || echo "### ❌ production: publishing failed. See the Release run log." > release-summary.md
           cat release-summary.md >> "$GITHUB_STEP_SUMMARY"

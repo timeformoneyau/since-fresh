@@ -36,17 +36,15 @@ The owner is non-technical and installs builds on a real Android phone. That pho
 
 ## Releases (see RELEASING.md)
 
-Every merge to `main` publishes automatically: `.github/workflows/release.yml` runs the checks again, then publishes to the **preview** channel and then **production**. A JavaScript-only change goes out as an EAS Update. A native change (fingerprint runtime version) starts an EAS build, and the install link is posted on the PR.
+Releases are fully automatic. Every merge to `main` with all checks green publishes with no human approval: `.github/workflows/release.yml` confirms the merged PR passed every check, runs the tests again, publishes to the **preview** channel and then, once that succeeds, to **production**. A JavaScript-only change goes out as an EAS Update. A native change (fingerprint runtime version) starts an EAS build, and the install link is posted on the PR. No labels are needed; the owner tests on the phone afterwards and uses Rollback if something is wrong.
 
-7. **Classify every PR** with a label, and say which class it is in the PR description:
-   - **`automatic`**: UI layout, copy, styling, and logic that doesn't touch the GATED areas. Enable auto-merge on the PR; it merges once all checks are green and goes to preview and production.
-   - **`gated`**: anything touching sign-in/auth, sync, data storage or migrations, notifications, or the Supabase schema (`supabase/`). It merges only after checks are green **and** the owner adds the `approved` label (or comments "approved", which you then turn into the label). Production waits for the owner's approval of the `production-gated` deployment after they've tried it in the preview app.
-   - **If unsure, it's `gated`.** A PR with both areas is `gated`.
-8. **Data safety.** Migrations and storage changes must be backwards-safe and tested:
+7. **Merging.** Enable auto-merge on every PR (or merge it yourself once every check is green). Never merge with a check red or still running.
+8. **Data safety.** There is no human gate, so tests are the safeguard. Migrations and storage changes must be backwards-safe and tested:
+   - any change touching stored data, sync, sign-in/auth or migrations must include a test proving data saved by the current app still loads. The **Data safety** check enforces that a test changes alongside such code (`.github/scripts/data-safety.sh`), and Release won't publish without it;
    - old stored data must still load, nothing may be dropped, and older builds must keep working with what newer builds write;
    - so storage changes are **additive only**: new optional fields are fine, renaming or removing fields is not, within one release. A rollback runs older code against data written by newer code;
    - add `migrations.test.ts` cases for every new shape;
    - never publish an update that could lose or corrupt local data;
    - deletes are tombstoned in the cloud, so anything that "restores" an item must give it a new id.
-9. **Never publish on red, and never skip checks.** Don't bypass the Release gate, required checks or the production approval, and don't publish with `eas update` by hand outside the workflows.
-10. **PR descriptions keep the "Check on your phone" section** for what only the owner's phone can verify.
+9. **Never publish on red, and never skip checks.** Don't bypass required checks, and don't publish with `eas update` by hand outside the workflows.
+10. **PR descriptions** keep the "Check on your phone" section, and say whether the change touches **stored data, sync, sign-in/auth or notifications** (yes/no, which). That's information for the owner, not a gate.
