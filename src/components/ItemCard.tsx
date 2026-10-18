@@ -83,12 +83,13 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
       : `Last done ${daysSince} days ago`;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID={`item-${item.name}`}>
       {/* Swipe actions */}
       <View style={styles.actionsRow}>
         <TouchableOpacity
           style={[styles.actionBtn, styles.editBtn]}
           onPress={() => { closeSwipe(); onEdit(item); }}
+          testID={`item-${item.name}-edit`}
           accessibilityLabel={`Edit ${item.name}`}
           accessibilityRole="button"
         >
@@ -97,6 +98,7 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
         <TouchableOpacity
           style={[styles.actionBtn, styles.deleteBtn]}
           onPress={handleDelete}
+          testID={`item-${item.name}-delete`}
           accessibilityLabel={`Delete ${item.name}`}
           accessibilityRole="button"
         >
@@ -107,6 +109,7 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
       {/* Row */}
       <Animated.View
         style={[styles.row, { transform: [{ translateX }] }]}
+        testID={`item-${item.name}-row`}
         {...panResponder.panHandlers}
       >
         {/* Left state indicator */}
@@ -121,6 +124,7 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
               <TouchableOpacity
                 style={styles.nameWrap}
                 onPress={() => onPress(item)}
+                testID={`item-${item.name}-history`}
                 accessibilityLabel={`${item.name} history`}
                 accessibilityRole="button"
               >
@@ -132,6 +136,7 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
             <TouchableOpacity
               style={styles.doneBtn}
               onPress={() => onMarkDone(item)}
+              testID={`item-${item.name}-done`}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               accessibilityLabel={`Mark ${item.name} done`}
               accessibilityRole="button"

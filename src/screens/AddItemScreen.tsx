@@ -89,6 +89,7 @@ export default function AddItemScreen() {
           <TextInput
             ref={nameRef}
             style={styles.nameInput}
+            testID="add-name-input"
             placeholder="What have you done?"
             placeholderTextColor={colours.textMuted}
             value={name}
@@ -113,6 +114,7 @@ export default function AddItemScreen() {
           <Text style={styles.label}>Last done</Text>
           <TouchableOpacity
             style={styles.rowButton}
+            testID="add-last-done-button"
             onPress={() => setShowDatePicker(true)}
           >
             <Text style={styles.rowButtonText}>
@@ -137,6 +139,7 @@ export default function AddItemScreen() {
           <Text style={styles.label}>Repeat every</Text>
           <TextInput
             style={styles.repeatInput}
+            testID="add-repeat-input"
             placeholder="—"
             placeholderTextColor={colours.textMuted}
             value={repeatValue}
@@ -150,6 +153,7 @@ export default function AddItemScreen() {
                 key={u}
                 style={[styles.unitBtn, repeatUnit === u && styles.unitBtnActive]}
                 onPress={() => setRepeatUnit(u)}
+                testID={`add-unit-${u}`}
               >
                 <Text style={[styles.unitBtnText, repeatUnit === u && styles.unitBtnTextActive]}>
                   {u}
@@ -163,6 +167,7 @@ export default function AddItemScreen() {
         <TouchableOpacity
           style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
           onPress={handleSave}
+          testID="add-save-button"
           disabled={!canSave}
         >
           <Text style={styles.saveBtnText}>Track this</Text>

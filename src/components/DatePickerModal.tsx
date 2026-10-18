@@ -36,10 +36,12 @@ function WheelPicker({
   items,
   selectedIndex,
   onSelect,
+  testIDPrefix,
 }: {
   items: string[];
   selectedIndex: number;
   onSelect: (idx: number) => void;
+  testIDPrefix?: string;
 }) {
   return (
     <ScrollView
@@ -60,6 +62,7 @@ function WheelPicker({
           key={i}
           style={[styles.wheelItem, i === selectedIndex && styles.wheelItemSelected]}
           onPress={() => onSelect(i)}
+          testID={testIDPrefix ? `${testIDPrefix}-${label}` : undefined}
         >
           <Text
             style={[
@@ -103,7 +106,7 @@ export default function DatePickerModal({ value, onConfirm, onCancel }: Props) {
             <Text style={styles.toolbarCancel}>Cancel</Text>
           </TouchableOpacity>
           <Text style={styles.toolbarTitle}>Last done</Text>
-          <TouchableOpacity onPress={handleConfirm}>
+          <TouchableOpacity onPress={handleConfirm} testID="date-picker-done">
             <Text style={styles.toolbarDone}>Done</Text>
           </TouchableOpacity>
         </View>
@@ -124,6 +127,7 @@ export default function DatePickerModal({ value, onConfirm, onCancel }: Props) {
           {/* Year */}
           <WheelPicker
             items={years}
+            testIDPrefix="date-year"
             selectedIndex={years.indexOf(String(year))}
             onSelect={(i) => setYear(currentYear - 5 + i)}
           />

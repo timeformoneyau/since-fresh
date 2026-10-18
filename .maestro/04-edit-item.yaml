@@ -1,0 +1,30 @@
+appId: com.since.app
+name: Edit an item (swipe left, Edit)
+---
+- runFlow: subflows/launch.yaml
+- runFlow:
+    file: subflows/add-first-item.yaml
+    env:
+      NAME: Gutters
+- runFlow:
+    file: subflows/open-swipe-actions.yaml
+    env:
+      NAME: Gutters
+- tapOn:
+    id: "item-Gutters-edit"
+- tapOn:
+    id: "edit-name-input"
+- eraseText: 20
+- inputText: "Clean gutters"
+- scrollUntilVisible:
+    element:
+      id: "edit-save-button"
+- tapOn:
+    id: "edit-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Clean gutters"
+    timeout: 10000
+- assertNotVisible:
+    id: "item-Gutters"
+- takeScreenshot: 04-edit-item

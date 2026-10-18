@@ -1,0 +1,11 @@
+# Swipe item ${NAME} left to show its Edit / Delete buttons.
+appId: com.since.app
+---
+- swipe:
+    from:
+      id: "item-${NAME}-row"
+    direction: LEFT
+- extendedWaitUntil:
+    visible:
+      id: "item-${NAME}-edit"
+    timeout: 5000

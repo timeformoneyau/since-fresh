@@ -1,0 +1,11 @@
+# Fresh app, local-only test build (no sign-in), no items.
+appId: com.since.app
+---
+- launchApp:
+    clearState: true
+    permissions:
+      all: allow
+- extendedWaitUntil:
+    visible:
+      id: "empty-add-button"
+    timeout: 30000

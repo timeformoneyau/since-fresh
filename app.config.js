@@ -8,6 +8,15 @@
  * EAS builds read EAS secrets as environment variables.
  */
 
-module.exports = ({ config }) => ({
-  ...config,
-});
+module.exports = ({ config }) => {
+  // CI test builds for the Maestro flows only: drop the Supabase settings so
+  // the app runs local-only (no sign-in, no network), exactly as it does on a
+  // phone with no cloud config. Never set for EAS builds.
+  if (process.env.SINCE_LOCAL_ONLY === '1') {
+    return {
+      ...config,
+      extra: { ...config.extra, supabaseUrl: '', supabaseAnonKey: '' },
+    };
+  }
+  return { ...config };
+};

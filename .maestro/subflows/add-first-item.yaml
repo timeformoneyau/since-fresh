@@ -1,0 +1,17 @@
+# From the empty list: add one item named ${NAME} with no repeat.
+appId: com.since.app
+---
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: ${NAME}
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-${NAME}"
+    timeout: 10000
