@@ -28,7 +28,8 @@ status=0
 describe_screen() {
   echo "::group::Screen state: $1"
   adb shell dumpsys input_method | grep -E "mInputShown|mIsInputViewShown" | head -2 || true
-  adb shell dumpsys window windows | grep -E "Window #|mFrame=|mVisibleFrame=" | grep -A2 -E "com.since.app|InputMethod" | head -12 || true
+  echo "Keyboard window:"
+  adb shell dumpsys window InputMethod | grep -E "mFrame=|touchable region" | head -3 || true
   adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1 || true
   adb shell cat /sdcard/ui.xml 2>/dev/null | python3 -c '
 import re, sys
