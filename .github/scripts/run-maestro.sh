@@ -22,6 +22,35 @@ adb shell am force-stop "$APP"
 # Screenshots from takeScreenshot land in the working directory, so run from $OUT
 cd "$OUT"
 status=0
+
+# Text snapshot of the current screen, readable straight from the job log:
+# keyboard state, app window size, and where each element with a testID sits.
+describe_screen() {
+  echo "::group::Screen state: $1"
+  adb shell dumpsys input_method | grep -E "mInputShown|mIsInputViewShown" | head -2 || true
+  adb shell dumpsys window windows | grep -E "Window #|mFrame=|mVisibleFrame=" | grep -A2 -E "com.since.app|InputMethod" | head -12 || true
+  adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1 || true
+  adb shell cat /sdcard/ui.xml 2>/dev/null | python3 -c '
+import re, sys
+xml = sys.stdin.read()
+for node in re.findall(r"<node [^>]*>", xml):
+    rid = re.search(r"resource-id=\"([^\"]*)\"", node).group(1)
+    cls = re.search(r"class=\"([^\"]*)\"", node).group(1)
+    b = re.search(r"bounds=\"([^\"]*)\"", node).group(1)
+    if rid or cls.endswith("ScrollView"):
+        print(f"{rid or cls:40} {b}")
+' || true
+  echo "::endgroup::"
+}
+
+# The keyboard/Save flow first and on its own, so a failure can be described
+# while its screen is still showing
+if [ -f ../.maestro/07-add-keyboard-save.yaml ] && \
+   ! maestro test ../.maestro/07-add-keyboard-save.yaml --debug-output debug-07; then
+  status=1
+  describe_screen "07 failed (keyboard open on Add)"
+fi
+
 maestro test ../.maestro \
   --format junit --output report.xml \
   --debug-output debug || status=$?
