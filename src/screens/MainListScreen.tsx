@@ -6,8 +6,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  SafeAreaView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SinceItem, RootStackParamList, DEFAULT_CATEGORIES } from '../types';
@@ -67,6 +67,7 @@ const QUICK_START = [
 
 export default function MainListScreen() {
   const navigation = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
   const [items, setItems] = useState<DerivedItem[]>([]);
 
   const refresh = useCallback(async () => {
@@ -105,7 +106,7 @@ export default function MainListScreen() {
 
   if (items.length === 0) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <View style={[styles.safe, { paddingTop: insets.top }]}>
         <StatusBar barStyle="dark-content" backgroundColor={colours.background} />
         <View style={styles.emptyContainer}>
           <Text style={styles.appTitle}>Since</Text>
@@ -137,12 +138,12 @@ export default function MainListScreen() {
             ))}
           </View>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <View style={[styles.safe, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={colours.background} />
 
       {/* Header */}
@@ -193,11 +194,11 @@ export default function MainListScreen() {
             <Text style={styles.sectionHeaderText}>{section.title}</Text>
           </View>
         )}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { paddingBottom: 32 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled={false}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

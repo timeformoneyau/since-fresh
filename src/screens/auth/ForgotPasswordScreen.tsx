@@ -5,9 +5,10 @@ import {
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../types';
@@ -20,6 +21,8 @@ type Nav = NativeStackNavigationProp<AuthStackParamList, 'ForgotPassword'>;
 
 export default function ForgotPasswordScreen() {
   const navigation = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -45,10 +48,11 @@ export default function ForgotPasswordScreen() {
   return (
     <KeyboardAvoidingView
       style={s.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior="padding"
+      keyboardVerticalOffset={headerHeight}
     >
       <ScrollView
-        contentContainerStyle={s.container}
+        contentContainerStyle={[s.container, { paddingBottom: 40 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >

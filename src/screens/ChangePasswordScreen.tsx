@@ -7,9 +7,10 @@ import {
   ScrollView,
   StyleSheet,
   KeyboardAvoidingView,
-  Platform,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -21,6 +22,8 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'ChangePassword'>;
 
 export default function ChangePasswordScreen() {
   const navigation = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -52,9 +55,10 @@ export default function ChangePasswordScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior="padding"
+      keyboardVerticalOffset={headerHeight}
     >
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: 60 + insets.bottom }]} keyboardShouldPersistTaps="handled">
         <View style={styles.field}>
           <Text style={styles.label}>New password</Text>
           <TextInput
