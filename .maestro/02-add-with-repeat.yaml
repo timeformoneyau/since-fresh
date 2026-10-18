@@ -10,6 +10,8 @@ name: Add an item with a repeat cycle
 - tapOn:
     id: "add-repeat-input"
 - inputText: "2"
+# This flow is about the repeat, not the keyboard (07 covers Save with it open)
+- hideKeyboard
 - scrollUntilVisible:
     element:
       id: "add-unit-weeks"
