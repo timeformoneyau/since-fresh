@@ -5,9 +5,10 @@ import {
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList, RootStackParamList } from '../../types';
@@ -28,6 +29,8 @@ type Route = RouteProp<{ EnterCode: { email: string; purpose: CodePurpose } }, '
  */
 export default function EnterCodeScreen() {
   const navigation = useNavigation<AuthNav | AppNav>();
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const { email, purpose } = useRoute<Route>().params;
   const changingEmail = purpose === 'email_change';
   const [code, setCode] = useState('');
@@ -87,10 +90,11 @@ export default function EnterCodeScreen() {
   return (
     <KeyboardAvoidingView
       style={s.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior="padding"
+      keyboardVerticalOffset={headerHeight}
     >
       <ScrollView
-        contentContainerStyle={s.container}
+        contentContainerStyle={[s.container, { paddingBottom: 40 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >

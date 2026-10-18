@@ -1,0 +1,34 @@
+appId: com.since.app
+name: Add screen with the keyboard open, Save is still reachable
+# The keyboard stays open throughout (no hideKeyboard). With the fix, the form
+# sits above the keyboard and scrolls; if Save were stuck behind the keyboard,
+# no amount of scrolling would show it and the item wouldn't be saved.
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Bins"
+- tapOn:
+    id: "add-repeat-input"
+- inputText: "1"
+- takeScreenshot: 07-keyboard-open
+# Scroll the form itself, in the upper part of the screen. (Maestro's own
+# scrollUntilVisible swipes from mid-screen, which is on the keyboard.)
+- repeat:
+    while:
+      notVisible:
+        id: "add-save-button"
+    times: 6
+    commands:
+      - swipe:
+          start: 50%, 40%
+          end: 50%, 12%
+          duration: 400
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Bins"
+    timeout: 10000

@@ -5,10 +5,11 @@ import {
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   BackHandler,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { completePasswordRecovery, abandonPasswordRecovery } from '../../domain/auth/service';
 import { friendlyAuthError, MIN_PASSWORD_LENGTH } from '../../domain/auth/errors';
 import { colours } from '../../components/colours';
@@ -20,6 +21,8 @@ import { authStyles as s } from './authStyles';
  * App.tsx opens the list; backing out signs out without wiping the phone.
  */
 export default function SetNewPasswordScreen() {
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -56,10 +59,11 @@ export default function SetNewPasswordScreen() {
   return (
     <KeyboardAvoidingView
       style={s.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior="padding"
+      keyboardVerticalOffset={headerHeight}
     >
       <ScrollView
-        contentContainerStyle={s.container}
+        contentContainerStyle={[s.container, { paddingBottom: 40 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
