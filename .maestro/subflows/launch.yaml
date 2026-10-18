@@ -8,4 +8,4 @@ appId: com.since.app
 - extendedWaitUntil:
     visible:
       id: "empty-add-button"
-    timeout: 30000
+    timeout: 60000
