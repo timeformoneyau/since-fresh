@@ -7,6 +7,12 @@ OUT=maestro-results
 APP=com.since.app
 mkdir -p "$OUT"
 
+# A slow CI emulator sometimes reports the home-screen app (launcher) as "not
+# responding"; the system dialog then covers whatever app is open. Hide crash
+# and ANR dialogs on this test device, and close any already showing.
+adb shell settings put global hide_error_dialogs 1
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS > /dev/null || true
+
 adb install -r android/app/build/outputs/apk/release/app-release.apk
 
 # Warm-up: the first cold start of a release build on a CI emulator can take
