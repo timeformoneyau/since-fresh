@@ -17,6 +17,10 @@ The PR page shows a check called **CI** with two parts:
 
 Part 2 only starts if part 1 passes.
 
+3. **Release gate** (a few seconds): checks the PR's class label. **automatic** passes; **gated** passes only once you add **approved**. See `RELEASING.md`.
+
+After a merge, the **Release** workflow runs the type check and tests again before publishing anything.
+
 ## What is *not* tested automatically
 
 - **Sign-in, sync and anything that needs your Supabase account.** Test builds run *local-only*, the way the app works with no cloud set up: no sign-in screen, nothing leaves the phone. That keeps tests fast and means no real accounts or data are touched. It also means the **Account** button doesn't appear in the flows. Sign-in, sync, change email/password and account deletion still need a check on your phone.

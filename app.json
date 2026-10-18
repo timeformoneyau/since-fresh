@@ -40,6 +40,14 @@
       "supabaseUrl": "https://iiuxkzhbefiqckekjntl.supabase.co",
       "supabaseAnonKey": "sb_publishable_ZWvQ_ccf76_fDd0MyLZ6Xg_rtt2_c2O"
     },
-    "scheme": "since"
+    "scheme": "since",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3c35d81c-5a3e-4fd8-99a9-e6c95441f721",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
   }
 }
