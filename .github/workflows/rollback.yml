@@ -1,0 +1,35 @@
+name: Rollback
+
+# "If something is broken, do this": Actions → Rollback → Run workflow →
+# pick the channel → Run. See RELEASING.md.
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Which app to roll back
+        type: choice
+        options: [production, preview]
+        default: production
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    name: Roll back ${{ inputs.channel }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Roll back
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: bash .github/scripts/rollback.sh "${{ inputs.channel }}"
+      - if: always()
+        run: '[ -f release-summary.md ] && cat release-summary.md >> "$GITHUB_STEP_SUMMARY" || true'
