@@ -16,6 +16,8 @@ name: Edit an item (swipe left, Edit)
     id: "edit-name-input"
 - eraseText: 20
 - inputText: "Clean gutters"
+# Not a keyboard test (Save with the keyboard open has its own flow)
+- hideKeyboard
 - scrollUntilVisible:
     element:
       id: "edit-save-button"

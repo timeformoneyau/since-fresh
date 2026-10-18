@@ -6,6 +6,8 @@ appId: com.since.app
 - tapOn:
     id: "add-name-input"
 - inputText: ${NAME}
+# Not a keyboard test (Save with the keyboard open has its own flow)
+- hideKeyboard
 - scrollUntilVisible:
     element:
       id: "add-save-button"

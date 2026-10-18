@@ -14,6 +14,8 @@ name: Mark an item done
     id: "date-year-${new Date().getFullYear() - 1}"
 - tapOn:
     id: "date-picker-done"
+# Not a keyboard test (Save with the keyboard open has its own flow)
+- hideKeyboard
 - scrollUntilVisible:
     element:
       id: "add-save-button"
