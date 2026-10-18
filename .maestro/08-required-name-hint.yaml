@@ -5,9 +5,6 @@ name: Save with no name shows the required-field hint
 - tapOn:
     id: "empty-add-button"
 - assertVisible: "Repeat every \\(optional\\)"
-- scrollUntilVisible:
-    element:
-      id: "add-save-button"
 - tapOn:
     id: "add-save-button"
 - assertVisible: "Add a name to save"

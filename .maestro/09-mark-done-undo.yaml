@@ -7,6 +7,7 @@ name: Mark done, then Undo puts the previous date back
 - tapOn:
     id: "add-name-input"
 - inputText: "Car service"
+- hideKeyboard
 # Last done: same day last year
 - tapOn:
     id: "add-last-done-button"
