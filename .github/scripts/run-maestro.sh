@@ -44,19 +44,22 @@ for node in re.findall(r"<node [^>]*>", xml):
     rid = re.search(r"resource-id=\"([^\"]*)\"", node).group(1)
     cls = re.search(r"class=\"([^\"]*)\"", node).group(1)
     b = re.search(r"bounds=\"([^\"]*)\"", node).group(1)
+    off = "" if "enabled=\"true\"" in node else " (disabled)"
     if rid or cls.endswith("ScrollView"):
-        print(f"{rid or cls:40} {b}")
+        print(f"{rid or cls:40} {b}{off}")
 ' || true
   echo "::endgroup::"
 }
 
-# The keyboard/Save flow first and on its own, so a failure can be described
+# The Add-screen flows first and on their own, so a failure can be described
 # while its screen is still showing
-if [ -f ../.maestro/07-add-keyboard-save.yaml ] && \
-   ! maestro test ../.maestro/07-add-keyboard-save.yaml --debug-output debug-07; then
-  status=1
-  describe_screen "07 failed (keyboard open on Add)"
-fi
+for flow in 07-add-keyboard-save 08-required-name-hint; do
+  if [ -f "../.maestro/$flow.yaml" ] && \
+     ! maestro test "../.maestro/$flow.yaml" --debug-output "debug-$flow"; then
+    status=1
+    describe_screen "$flow failed"
+  fi
+done
 
 maestro test ../.maestro \
   --format junit --output report.xml \
