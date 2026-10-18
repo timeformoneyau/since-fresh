@@ -10,10 +10,16 @@ import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navig
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, CompletionEvent } from '../types';
 import { DerivedItem } from '../domain/items/types';
-import { getDerivedItemById, markItemDone } from '../domain/items/service';
+import {
+  getDerivedItemById,
+  markItemDone,
+  undoMarkDone,
+  canUndoDone,
+} from '../domain/items/service';
 import { secondaryLine } from '../utils/statusUtils';
 import { humaniseDaysSince, parseDate, formatDisplay, getDaysSince } from '../utils/dateUtils';
 import { colours, statusColour } from '../components/colours';
+import { useToast } from '../components/Toast';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Detail'>;
 type Route = RouteProp<RootStackParamList, 'Detail'>;
@@ -48,6 +54,7 @@ export default function DetailScreen() {
   const route = useRoute<Route>();
   const { itemId } = route.params;
   const [item, setItem] = useState<DerivedItem | null>(null);
+  const showToast = useToast();
 
   const refresh = useCallback(async () => {
     const derived = await getDerivedItemById(itemId);
@@ -56,6 +63,35 @@ export default function DetailScreen() {
   }, [itemId, navigation]);
 
   useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
+
+  async function handleMarkDone() {
+    if (!item) return;
+    const previousLastDoneDate = item.lastDoneDate;
+    const updated = await markItemDone(item.id);
+    refresh();
+    showToast({
+      message: 'Marked as done',
+      actionLabel: 'Undo',
+      onAction: async () => {
+        try {
+          await undoMarkDone(itemId, updated.history[0].id, previousLastDoneDate);
+          refresh();
+        } catch {
+          showToast({ message: "Couldn't undo. Please try again." });
+        }
+      },
+    });
+  }
+
+  /** Undo the latest completion later on, from the History list. */
+  async function handleUndoLatest(eventId: string) {
+    try {
+      await undoMarkDone(itemId, eventId);
+      refresh();
+    } catch {
+      showToast({ message: "Couldn't undo. Please try again." });
+    }
+  }
 
   if (!item) return null;
 
@@ -70,6 +106,16 @@ export default function DetailScreen() {
       <View style={styles.metaRow}>
         <Text style={styles.category}>{item.category}</Text>
         {avg !== null && <Text style={styles.avg}>{formatAverage(avg)}</Text>}
+        <TouchableOpacity
+          style={styles.editLink}
+          onPress={() => navigation.navigate('Edit', { itemId: item.id })}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          testID="detail-edit-button"
+          accessibilityRole="button"
+          accessibilityLabel={`Edit ${item.name}`}
+        >
+          <Text style={styles.editLinkText}>Edit</Text>
+        </TouchableOpacity>
       </View>
 
       {item.status.label !== null ? (
@@ -84,7 +130,8 @@ export default function DetailScreen() {
 
       <TouchableOpacity
         style={styles.doneBtn}
-        onPress={async () => { await markItemDone(item.id); refresh(); }}
+        onPress={handleMarkDone}
+        testID="detail-mark-done-button"
         accessibilityRole="button"
         accessibilityLabel={`Mark ${item.name} done`}
       >
@@ -111,6 +158,17 @@ export default function DetailScreen() {
                   {gap !== null && ` · ${gap} days after the previous`}
                 </Text>
               </View>
+              {i === 0 && canUndoDone(item) && (
+                <TouchableOpacity
+                  onPress={() => handleUndoLatest(event.id)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  testID="detail-undo-latest"
+                  accessibilityRole="button"
+                  accessibilityLabel="Undo the latest entry"
+                >
+                  <Text style={styles.undoText}>Undo</Text>
+                </TouchableOpacity>
+              )}
             </View>
           );
         })
@@ -167,4 +225,7 @@ const styles = StyleSheet.create({
   historyBody: { flex: 1 },
   historyDate: { fontSize: 15, color: colours.textPrimary, marginBottom: 2 },
   historyMeta: { fontSize: 13, color: colours.textMuted },
+  editLink: { marginLeft: 'auto' },
+  editLinkText: { fontSize: 13, fontWeight: '500', color: colours.textSecondary },
+  undoText: { fontSize: 13, fontWeight: '500', color: colours.textMuted },
 });

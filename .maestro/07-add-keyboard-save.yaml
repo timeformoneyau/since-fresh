@@ -10,12 +10,22 @@ name: Add screen with the keyboard open, Save is still reachable
 - tapOn:
     id: "add-name-input"
 - inputText: "Bins"
+# Scroll the form itself, in the upper part of the screen. (Maestro's own
+# scrollUntilVisible swipes from mid-screen, which is on the keyboard.)
+- repeat:
+    while:
+      notVisible:
+        id: "add-repeat-input"
+    times: 6
+    commands:
+      - swipe:
+          start: 50%, 40%
+          end: 50%, 12%
+          duration: 400
 - tapOn:
     id: "add-repeat-input"
 - inputText: "1"
 - takeScreenshot: 07-keyboard-open
-# Scroll the form itself, in the upper part of the screen. (Maestro's own
-# scrollUntilVisible swipes from mid-screen, which is on the keyboard.)
 - repeat:
     while:
       notVisible:

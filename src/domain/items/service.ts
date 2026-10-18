@@ -23,6 +23,25 @@ import {
 } from '../../notifications/scheduler';
 import { enqueueUpsert, enqueueDelete } from '../sync/queue';
 import { syncInBackground } from '../sync/engine';
+import { withoutCompletion, copyForRestore } from './undo';
+
+export { canUndoDone } from './undo';
+
+type ItemsListener = () => void;
+const listeners = new Set<ItemsListener>();
+
+/**
+ * Subscribe to changes made by an undo (from a toast, possibly while the list
+ * is already on screen). Returns an unsubscribe function.
+ */
+export function onItemsChanged(listener: ItemsListener): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+function notifyItemsChanged(): void {
+  listeners.forEach((l) => l());
+}
 
 /** New ids are UUIDs. Ids created by earlier builds stay as they are. */
 function generateId(): string {
@@ -127,15 +146,63 @@ export async function markItemDone(itemId: string, doneDate?: string): Promise<D
 }
 
 /**
+ * Undo a completion recorded by markItemDone (see undo.ts for the rules).
+ * Returns the item unchanged when there is nothing to undo.
+ */
+export async function undoMarkDone(
+  itemId: string,
+  eventId: string,
+  previousLastDoneDate?: string,
+): Promise<DerivedItem> {
+  const items = await loadItems();
+  const existing = items.find((i) => i.id === itemId);
+  if (!existing) throw new Error(`Item not found: ${itemId}`);
+
+  const updated = withoutCompletion(existing, eventId, new Date().toISOString(), previousLastDoneDate);
+  if (!updated) return deriveItem(existing);
+
+  await saveItems(items.map((i) => (i.id === itemId ? updated : i)));
+  await scheduleItemNotifications(updated);
+
+  await enqueueUpsert(updated.id);
+  syncInBackground();
+  notifyItemsChanged();
+
+  return deriveItem(updated);
+}
+
+/**
  * Delete an item and fully recompute notifications for the remaining set.
  * Full recompute is needed because grouped overdue counts may change.
+ * Returns the deleted item so it can be put back with restoreDeletedItem.
  */
-export async function deleteItem(itemId: string): Promise<void> {
+export async function deleteItem(itemId: string): Promise<SinceItem | null> {
   const items = await loadItems();
+  const deleted = items.find((i) => i.id === itemId) ?? null;
   const remaining = items.filter((i) => i.id !== itemId);
   await saveItems(remaining);
   await rescheduleAllNotifications(remaining);
 
   await enqueueDelete(itemId);
   syncInBackground();
+
+  return deleted;
+}
+
+/**
+ * Undo a delete: put the item back as it was, under a new id (the old id is
+ * tombstoned once the delete syncs — see copyForRestore).
+ */
+export async function restoreDeletedItem(item: SinceItem): Promise<DerivedItem> {
+  const restored = copyForRestore(item, generateId(), new Date().toISOString());
+  const items = await loadItems();
+  const all = [...items, restored];
+  await saveItems(all);
+  await rescheduleAllNotifications(all);
+
+  await enqueueUpsert(restored.id);
+  syncInBackground();
+  notifyItemsChanged();
+
+  return deriveItem(restored);
 }

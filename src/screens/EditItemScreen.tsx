@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,11 +13,12 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, RepeatUnit } from '../types';
-import { getDerivedItemById, updateItem, deleteItem } from '../domain/items/service';
+import { getDerivedItemById, updateItem, deleteItem, restoreDeletedItem } from '../domain/items/service';
 import { formatDisplay, parseDate, todayString } from '../utils/dateUtils';
 import { colours } from '../components/colours';
 import DatePickerModal from '../components/DatePickerModal';
 import CategoryPicker from '../components/CategoryPicker';
+import { useToast } from '../components/Toast';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Edit'>;
 type Route = RouteProp<RootStackParamList, 'Edit'>;
@@ -29,6 +29,7 @@ export default function EditItemScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
+  const showToast = useToast();
   const route = useRoute<Route>();
   const { itemId } = route.params;
 
@@ -40,6 +41,7 @@ export default function EditItemScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showNameHint, setShowNameHint] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -56,7 +58,10 @@ export default function EditItemScreen() {
 
   async function handleSave() {
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setShowNameHint(true);
+      return;
+    }
 
     const rv = repeatValue ? parseInt(repeatValue, 10) : null;
     const hasRepeat = rv !== null && rv > 0;
@@ -73,26 +78,27 @@ export default function EditItemScreen() {
   }
 
   async function handleDelete() {
-    Alert.alert(
-      'Delete item',
-      `Remove "${name}" from Since?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteItem(itemId);
-            navigation.goBack();
-          },
-        },
-      ],
-    );
+    const removed = await deleteItem(itemId);
+    // Back to the list: a History screen for this item would no longer exist
+    navigation.popToTop();
+    if (!removed) return;
+    showToast({
+      message: `${removed.name} deleted`,
+      actionLabel: 'Undo',
+      onAction: async () => {
+        try {
+          await restoreDeletedItem(removed);
+        } catch {
+          showToast({ message: "Couldn't undo. Please try again." });
+        }
+      },
+    });
   }
 
   if (loading) return null;
 
   const canSave = name.trim().length > 0;
+  const hasRepeatValue = repeatValue !== '';
 
   return (
     <KeyboardAvoidingView
@@ -144,12 +150,12 @@ export default function EditItemScreen() {
 
         {/* Repeat every */}
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Repeat every</Text>
+          <Text style={styles.label}>Repeat every (optional)</Text>
           <View style={styles.repeatRow}>
             <TextInput
               style={styles.repeatInput}
               testID="edit-repeat-input"
-              placeholder="—"
+              placeholder="No repeat"
               placeholderTextColor={colours.textMuted}
               value={repeatValue}
               onChangeText={(t) => setRepeatValue(t.replace(/[^0-9]/g, ''))}
@@ -160,16 +166,17 @@ export default function EditItemScreen() {
               {REPEAT_UNITS.map((u) => (
                 <TouchableOpacity
                   key={u}
+                  testID={`edit-unit-${u}`}
                   style={[
                     styles.unitBtn,
-                    repeatUnit === u && styles.unitBtnActive,
+                    hasRepeatValue && repeatUnit === u && styles.unitBtnActive,
                   ]}
                   onPress={() => setRepeatUnit(u)}
                 >
                   <Text
                     style={[
                       styles.unitBtnText,
-                      repeatUnit === u && styles.unitBtnTextActive,
+                      hasRepeatValue && repeatUnit === u && styles.unitBtnTextActive,
                     ]}
                   >
                     {u}
@@ -177,6 +184,7 @@ export default function EditItemScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            {!hasRepeatValue && <Text style={styles.hint}>Leave blank to just keep track of when you last did it.</Text>}
           </View>
         </View>
 
@@ -185,10 +193,17 @@ export default function EditItemScreen() {
           style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
           onPress={handleSave}
           testID="edit-save-button"
-          disabled={!canSave}
+          // Stays tappable so it can explain why it can't save. Explicit
+          // disabled={false} is needed: TouchableOpacity otherwise treats
+          // accessibilityState.disabled as disabled and swallows the tap.
+          disabled={false}
+          accessibilityState={{ disabled: !canSave }}
         >
           <Text style={styles.saveBtnText}>Save changes</Text>
         </TouchableOpacity>
+        {showNameHint && !canSave && (
+          <Text style={styles.saveHint} testID="edit-save-hint">Add a name to save</Text>
+        )}
 
         {/* Delete */}
         <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} testID="edit-delete-button">
@@ -281,6 +296,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   saveBtnDisabled: { opacity: 0.35 },
+  hint: { fontSize: 12, color: colours.textMuted, marginTop: 8 },
+  saveHint: { fontSize: 13, color: colours.textSecondary, textAlign: 'center', marginTop: 10 },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   deleteBtn: {
     paddingVertical: 14,
