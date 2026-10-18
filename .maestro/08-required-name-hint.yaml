@@ -1,0 +1,20 @@
+appId: com.since.app
+name: Save with no name shows the required-field hint
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "empty-add-button"
+- assertVisible: "Repeat every \\(optional\\)"
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- assertVisible: "Add a name to save"
+- takeScreenshot: 08-required-name-hint
+# Typing a name clears the hint
+- tapOn:
+    id: "add-name-input"
+- inputText: "Dentist"
+- assertNotVisible:
+    id: "add-save-hint"

@@ -1,0 +1,32 @@
+appId: com.since.app
+name: Mark done, then Undo puts the previous date back
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Car service"
+# Last done: same day last year
+- tapOn:
+    id: "add-last-done-button"
+- tapOn:
+    id: "date-year-${new Date().getFullYear() - 1}"
+- tapOn:
+    id: "date-picker-done"
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Car service"
+    timeout: 10000
+- tapOn:
+    id: "item-Car service-done"
+- assertVisible: "Car service marked as done"
+- takeScreenshot: 09-done-toast
+- tapOn:
+    id: "toast-action"
+- assertVisible: "Last done .* days ago"

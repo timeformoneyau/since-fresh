@@ -9,6 +9,7 @@ import type { Session } from '@supabase/supabase-js';
 import { getSupabase, isCloudSyncConfigured } from './src/lib/supabase';
 import { RootStackParamList, AuthStackParamList, RecoveryStackParamList } from './src/types';
 import { colours } from './src/components/colours';
+import { ToastProvider } from './src/components/Toast';
 import { requestNotificationPermissions, rescheduleAllNotifications } from './src/notifications/scheduler';
 import { loadItems } from './src/domain/items/storage';
 import { reconcileDeviceOwnership, syncInBackground } from './src/domain/sync/engine';
@@ -196,9 +197,11 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        {showRecovery ? <RecoveryNavigator /> : showApp ? <AppNavigator /> : <AuthNavigator />}
-      </NavigationContainer>
+      <ToastProvider>
+        <NavigationContainer>
+          {showRecovery ? <RecoveryNavigator /> : showApp ? <AppNavigator /> : <AuthNavigator />}
+        </NavigationContainer>
+      </ToastProvider>
     </SafeAreaProvider>
   );
 }

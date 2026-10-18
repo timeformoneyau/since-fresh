@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Animated,
   PanResponder,
 } from 'react-native';
@@ -61,18 +60,9 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
   }
 
   function handleDelete() {
-    Alert.alert(
-      'Delete item',
-      `Remove "${item.name}" from Since?`,
-      [
-        { text: 'Cancel', style: 'cancel', onPress: closeSwipe },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => onDelete(item),
-        },
-      ],
-    );
+    // No confirm dialog: the list offers Undo right after
+    closeSwipe();
+    onDelete(item);
   }
 
   const sinceText =

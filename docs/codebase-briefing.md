@@ -73,7 +73,7 @@ interface SinceItem {
 }
 
 const DEFAULT_CATEGORIES =
-  ['Household','Health','Auto','Family','Admin','Purchases','Other'];
+  ['Household','Health','Auto','Family','Admin','Finance','Purchases','Other'];
 ```
 
 Due date: `nextDueDate = lastDoneDate + repeatValue · repeatUnit`. Items with no repeat are
@@ -112,12 +112,16 @@ configured *and* nobody is signed in. Otherwise `AppNavigator`: `Main`, `Add`, `
 - **Main** (`MainListScreen`) — items grouped into per-category `SectionList` sections. Grouping
   nests urgency sorting: sections are ordered by their most-urgent member, items stay
   urgency-sorted within. Swipeable `ItemCard`s (swipe left → Edit / Delete;
-  "Done" button marks done today). A one-line `SystemStatus` summary sits under the header
+  "Done" button marks done today). Done and Delete each show a toast with **Undo**
+  (`undoMarkDone` / `restoreDeletedItem` in `service.ts`; a restored item takes a new id
+  because the old one is tombstoned in the cloud). A one-line `SystemStatus` summary sits under the header
   ("All good. Nothing needs attention." / "A few things might need attention." …). Header has
   **＋** (add). Empty state shows the tagline, "Add something", and quick-start chips.
 - **Add** (`AddItemScreen`) — name, last-done date, category, repeat-every (number + unit). Shows a
   keyword **suggestion banner** (from `suggestions.ts`).
-- **Edit** (`EditItemScreen`) — same fields plus delete (confirm dialog).
+- **Edit** (`EditItemScreen`) — same fields plus delete (no confirm; Undo toast).
+- **History** (`DetailScreen`) — completion log, "Mark done today" (with Undo), an **Undo**
+  link on the newest entry, and an **Edit** link (so Edit/Delete aren't swipe-only).
 
 ---
 

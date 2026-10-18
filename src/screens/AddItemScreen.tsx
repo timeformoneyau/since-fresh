@@ -39,6 +39,7 @@ export default function AddItemScreen() {
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [suggestion, setSuggestion] = useState<{ repeatValue: number; repeatUnit: RepeatUnit } | null>(null);
   const [suggestionApplied, setSuggestionApplied] = useState(false);
+  const [showNameHint, setShowNameHint] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => nameRef.current?.focus(), 100);
@@ -59,7 +60,10 @@ export default function AddItemScreen() {
 
   async function handleSave() {
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setShowNameHint(true);
+      return;
+    }
 
     const rv = repeatValue ? parseInt(repeatValue, 10) : null;
     const hasRepeat = rv !== null && rv > 0;
@@ -76,6 +80,7 @@ export default function AddItemScreen() {
   }
 
   const canSave = name.trim().length > 0;
+  const hasRepeatValue = repeatValue !== '';
 
   return (
     <KeyboardAvoidingView
@@ -90,6 +95,7 @@ export default function AddItemScreen() {
       >
         {/* Name */}
         <View style={styles.field}>
+          <Text style={styles.label}>Name</Text>
           <TextInput
             ref={nameRef}
             style={styles.nameInput}
@@ -140,11 +146,11 @@ export default function AddItemScreen() {
 
         {/* Repeat every */}
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Repeat every</Text>
+          <Text style={styles.label}>Repeat every (optional)</Text>
           <TextInput
             style={styles.repeatInput}
             testID="add-repeat-input"
-            placeholder="—"
+            placeholder="No repeat"
             placeholderTextColor={colours.textMuted}
             value={repeatValue}
             onChangeText={(t) => setRepeatValue(t.replace(/[^0-9]/g, ''))}
@@ -155,16 +161,17 @@ export default function AddItemScreen() {
             {REPEAT_UNITS.map((u) => (
               <TouchableOpacity
                 key={u}
-                style={[styles.unitBtn, repeatUnit === u && styles.unitBtnActive]}
+                style={[styles.unitBtn, hasRepeatValue && repeatUnit === u && styles.unitBtnActive]}
                 onPress={() => setRepeatUnit(u)}
                 testID={`add-unit-${u}`}
               >
-                <Text style={[styles.unitBtnText, repeatUnit === u && styles.unitBtnTextActive]}>
+                <Text style={[styles.unitBtnText, hasRepeatValue && repeatUnit === u && styles.unitBtnTextActive]}>
                   {u}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
+          {!hasRepeatValue && <Text style={styles.hint}>Leave blank to just keep track of when you last did it.</Text>}
         </View>
 
         {/* Save */}
@@ -172,10 +179,17 @@ export default function AddItemScreen() {
           style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
           onPress={handleSave}
           testID="add-save-button"
-          disabled={!canSave}
+          // Stays tappable so it can explain why it can't save. Explicit
+          // disabled={false} is needed: TouchableOpacity otherwise treats
+          // accessibilityState.disabled as disabled and swallows the tap.
+          disabled={false}
+          accessibilityState={{ disabled: !canSave }}
         >
           <Text style={styles.saveBtnText}>Track this</Text>
         </TouchableOpacity>
+        {showNameHint && !canSave && (
+          <Text style={styles.saveHint} testID="add-save-hint">Add a name to save</Text>
+        )}
       </ScrollView>
 
       {showDatePicker && (
@@ -276,5 +290,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   saveBtnDisabled: { opacity: 0.35 },
+  hint: { fontSize: 12, color: colours.textMuted, marginTop: 8 },
+  saveHint: { fontSize: 13, color: colours.textSecondary, textAlign: 'center', marginTop: 10 },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });

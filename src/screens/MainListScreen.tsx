@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,19 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SinceItem, RootStackParamList, DEFAULT_CATEGORIES } from '../types';
 import { DerivedItem } from '../domain/items/types';
-import { getDerivedItems, markItemDone, deleteItem } from '../domain/items/service';
+import {
+  getDerivedItems,
+  markItemDone,
+  undoMarkDone,
+  deleteItem,
+  restoreDeletedItem,
+  onItemsChanged,
+} from '../domain/items/service';
 import { sortItems, computeItemStatus, statusSortOrder } from '../utils/statusUtils';
 import { isCloudSyncConfigured } from '../lib/supabase';
 import { syncNow } from '../domain/sync/engine';
 import ItemCard from '../components/ItemCard';
+import { useToast } from '../components/Toast';
 import SystemStatus from '../components/SystemStatus';
 import { colours } from '../components/colours';
 
@@ -69,6 +77,7 @@ export default function MainListScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<DerivedItem[]>([]);
+  const showToast = useToast();
 
   const refresh = useCallback(async () => {
     setItems(await getDerivedItems());
@@ -86,14 +95,41 @@ export default function MainListScreen() {
     }, [refresh]),
   );
 
+  // Picks up undo actions taken from a toast while this screen is showing
+  useEffect(() => onItemsChanged(refresh), [refresh]);
+
   async function handleMarkDone(item: SinceItem) {
-    await markItemDone(item.id);
+    const previousLastDoneDate = item.lastDoneDate;
+    const updated = await markItemDone(item.id);
     refresh();
+    showToast({
+      message: `${item.name} marked as done`,
+      actionLabel: 'Undo',
+      onAction: async () => {
+        try {
+          await undoMarkDone(item.id, updated.history[0].id, previousLastDoneDate);
+        } catch {
+          showToast({ message: "Couldn't undo. Please try again." });
+        }
+      },
+    });
   }
 
   async function handleDelete(item: SinceItem) {
-    await deleteItem(item.id);
+    const removed = await deleteItem(item.id);
     refresh();
+    if (!removed) return;
+    showToast({
+      message: `${removed.name} deleted`,
+      actionLabel: 'Undo',
+      onAction: async () => {
+        try {
+          await restoreDeletedItem(removed);
+        } catch {
+          showToast({ message: "Couldn't undo. Please try again." });
+        }
+      },
+    });
   }
 
   function handleEdit(item: SinceItem) {

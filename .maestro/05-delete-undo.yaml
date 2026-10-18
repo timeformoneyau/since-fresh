@@ -1,5 +1,5 @@
 appId: com.since.app
-name: Delete an item (swipe left, Delete, confirm)
+name: Delete an item (swipe left, Delete), then Undo
 ---
 - runFlow: subflows/launch.yaml
 - runFlow:
@@ -12,12 +12,11 @@ name: Delete an item (swipe left, Delete, confirm)
       NAME: Passport
 - tapOn:
     id: "item-Passport-delete"
-- assertVisible: "Delete item"
-- takeScreenshot: 05-delete-confirm
-# Android dialog: "Delete" is the positive button
+- assertVisible: "Passport deleted"
+- takeScreenshot: 05-delete-toast
 - tapOn:
-    id: "android:id/button1"
+    id: "toast-action"
 - extendedWaitUntil:
-    notVisible:
+    visible:
       id: "item-Passport"
     timeout: 10000
