@@ -1,0 +1,30 @@
+appId: com.since.app
+name: Add an item with a repeat cycle
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Water plants"
+- tapOn:
+    id: "add-repeat-input"
+- inputText: "2"
+# This flow is about the repeat, not the keyboard (07 covers Save with it open)
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "add-unit-weeks"
+- tapOn:
+    id: "add-unit-weeks"
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Water plants"
+    timeout: 10000
+- assertVisible: ".*in 14 days.*"
+- takeScreenshot: 02-add-with-repeat

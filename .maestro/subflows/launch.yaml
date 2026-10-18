@@ -1,0 +1,17 @@
+# Fresh app, local-only test build (no sign-in), no items.
+appId: com.since.app
+---
+# On a busy CI emulator the app occasionally doesn't come to the front after a
+# clear-state launch. Retry the launch itself (only this step): an app that
+# truly fails to start still fails all attempts.
+- retry:
+    maxRetries: 2
+    commands:
+      - launchApp:
+          clearState: true
+          permissions:
+            all: allow
+      - extendedWaitUntil:
+          visible:
+            id: "empty-add-button"
+          timeout: 60000

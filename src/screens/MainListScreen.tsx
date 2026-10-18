@@ -117,6 +117,7 @@ export default function MainListScreen() {
           <View style={styles.ctaRow}>
             <TouchableOpacity
               style={styles.primaryCTA}
+              testID="empty-add-button"
               onPress={() => navigation.navigate('Add')}
             >
               <Text style={styles.primaryCTAText}>Add something</Text>
@@ -151,6 +152,7 @@ export default function MainListScreen() {
           {isCloudSyncConfigured() && (
             <TouchableOpacity
               style={styles.accountBtn}
+              testID="main-account-button"
               onPress={() => navigation.navigate('Account')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityLabel="Account"
@@ -161,6 +163,7 @@ export default function MainListScreen() {
           )}
           <TouchableOpacity
             style={styles.addBtn}
+            testID="main-add-button"
             onPress={() => navigation.navigate('Add')}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityLabel="Add something"

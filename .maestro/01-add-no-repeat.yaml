@@ -1,0 +1,11 @@
+appId: com.since.app
+name: Add an item with a name only (no repeat)
+---
+- runFlow: subflows/launch.yaml
+- runFlow:
+    file: subflows/add-first-item.yaml
+    env:
+      NAME: Haircut
+- assertVisible: "Haircut"
+- assertVisible: "Tracked only"
+- takeScreenshot: 01-add-no-repeat

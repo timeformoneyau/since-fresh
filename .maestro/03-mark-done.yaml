@@ -1,0 +1,32 @@
+appId: com.since.app
+name: Mark an item done
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Car service"
+# Last done: same day last year, so "Done" visibly changes the card
+- tapOn:
+    id: "add-last-done-button"
+- tapOn:
+    id: "date-year-${new Date().getFullYear() - 1}"
+- tapOn:
+    id: "date-picker-done"
+# Not a keyboard test (Save with the keyboard open has its own flow)
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Car service"
+    timeout: 10000
+- assertVisible: "Last done .* days ago"
+- tapOn:
+    id: "item-Car service-done"
+- assertVisible: "Done today"
+- takeScreenshot: 03-mark-done

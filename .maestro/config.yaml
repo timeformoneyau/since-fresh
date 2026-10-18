@@ -1,0 +1,3 @@
+# Runs every flow in this folder (not subflows/) in file-name order.
+flows:
+  - "*.yaml"

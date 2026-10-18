@@ -1,0 +1,23 @@
+appId: com.since.app
+name: Delete an item (swipe left, Delete, confirm)
+---
+- runFlow: subflows/launch.yaml
+- runFlow:
+    file: subflows/add-first-item.yaml
+    env:
+      NAME: Passport
+- runFlow:
+    file: subflows/open-swipe-actions.yaml
+    env:
+      NAME: Passport
+- tapOn:
+    id: "item-Passport-delete"
+- assertVisible: "Delete item"
+- takeScreenshot: 05-delete-confirm
+# Android dialog: "Delete" is the positive button
+- tapOn:
+    id: "android:id/button1"
+- extendedWaitUntil:
+    notVisible:
+      id: "item-Passport"
+    timeout: 10000

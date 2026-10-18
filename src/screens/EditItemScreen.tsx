@@ -106,6 +106,7 @@ export default function EditItemScreen() {
           <Text style={styles.label}>Name</Text>
           <TextInput
             style={styles.textInput}
+            testID="edit-name-input"
             value={name}
             onChangeText={setName}
             autoCapitalize="sentences"
@@ -143,6 +144,7 @@ export default function EditItemScreen() {
           <View style={styles.repeatRow}>
             <TextInput
               style={styles.repeatInput}
+              testID="edit-repeat-input"
               placeholder="—"
               placeholderTextColor={colours.textMuted}
               value={repeatValue}
@@ -178,13 +180,14 @@ export default function EditItemScreen() {
         <TouchableOpacity
           style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
           onPress={handleSave}
+          testID="edit-save-button"
           disabled={!canSave}
         >
           <Text style={styles.saveBtnText}>Save changes</Text>
         </TouchableOpacity>
 
         {/* Delete */}
-        <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
+        <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} testID="edit-delete-button">
           <Text style={styles.deleteBtnText}>Delete this item</Text>
         </TouchableOpacity>
       </ScrollView>
