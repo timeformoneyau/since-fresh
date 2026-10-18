@@ -1,0 +1,24 @@
+appId: com.since.app
+name: Add screen with the keyboard open, Save is still reachable
+# The keyboard stays open throughout (no hideKeyboard). If Save were stuck
+# behind it, the tap would land on the keyboard and the item wouldn't appear.
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Bins"
+- tapOn:
+    id: "add-repeat-input"
+- inputText: "1"
+- takeScreenshot: 07-keyboard-open
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Bins"
+    timeout: 10000
