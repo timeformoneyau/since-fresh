@@ -29,6 +29,27 @@ jobs:
       - name: Component tests (npm run test:ui)
         run: npm run test:ui -- --ci
 
+  # Stored data, sync or sign-in code can't change without a test beside it
+  # (CLAUDE.md, rule 8). Release refuses to publish a PR without this green.
+  data-safety:
+    name: Data safety
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Test the check itself
+        run: bash .github/scripts/data-safety.test.sh
+      - name: Check data, sync and sign-in changes have tests
+        run: |
+          status=0
+          bash .github/scripts/data-safety.sh \
+            "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" || status=$?
+          cat data-safety.md >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
   android-flows:
     name: Android flows (Maestro)
     needs: checks

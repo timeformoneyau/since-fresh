@@ -17,7 +17,8 @@ The PR page shows a check called **CI** with two parts:
 
 Part 2 only starts if part 1 passes.
 
-3. **Release gate** (a few seconds): checks the PR's class label. **automatic** passes; **gated** passes only once you add **approved**. See `RELEASING.md`.
+3. **Data safety** (a few seconds): if the PR changes stored data, sync or sign-in code, it must also change a test showing your existing data still loads. Otherwise it fails.
+4. **Release gate** (a few seconds): information only, always passes. It notes whether the PR touches stored data, sync, sign-in or notifications. No labels are needed. See `RELEASING.md`.
 
 After a merge, the **Release** workflow runs the type check and tests again before publishing anything.
 

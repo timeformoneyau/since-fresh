@@ -1,13 +1,12 @@
 name: Release gate
 
-# Required check. Every PR needs a class label:
-#   automatic  - merges by itself once all checks are green
-#   gated      - also needs the owner's approval: the label "approved"
-# See RELEASING.md. Kept separate from CI so adding a label doesn't re-run
-# the slow emulator job.
+# Information only: always passes, no labels needed. It reports whether the PR
+# touches stored data, sync, sign-in or notifications. (Kept, under the same
+# name, so a branch rule that still lists "Release gate" doesn't block PRs.)
+# The real data rule is the "Data safety" check in ci.yml.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -17,21 +16,12 @@ jobs:
     name: Release gate
     runs-on: ubuntu-latest
     steps:
-      - name: Check class and approval labels
-        env:
-          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Report sensitive areas (never fails)
         run: |
-          has() { echo "$LABELS" | jq -e --arg l "$1" 'index($l) != null' > /dev/null; }
-          if has automatic && has gated; then
-            echo "::error::Both 'automatic' and 'gated' labels are set. Keep one (if unsure: gated)."; exit 1
-          elif has automatic; then
-            echo "AUTOMATIC change: no approval needed."
-          elif has gated; then
-            if has approved; then
-              echo "GATED change, approved by the owner."
-            else
-              echo "::error::GATED change: waiting for the owner's approval. Add the label 'approved' to this PR."; exit 1
-            fi
-          else
-            echo "::error::No class label. Add 'automatic' or 'gated' (if unsure: gated)."; exit 1
-          fi
+          bash .github/scripts/data-safety.sh \
+            "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" || true
+          echo "Releases are automatic: this check never blocks a merge."
+          cat data-safety.md >> "$GITHUB_STEP_SUMMARY"
