@@ -55,10 +55,18 @@ jobs:
       - run: npm ci --no-audit --no-fund
 
       - name: Generate native Android project
-        run: npx expo prebuild --platform android --no-install
+        run: |
+          npx expo prebuild --platform android --no-install
+          # The default 512 MB metaspace runs out once expo-updates is in (the
+          # build then hangs); the runner has 16 GB
+          sed -i '/^org.gradle.jvmargs=/d; /^kotlin.daemon.jvmargs=/d' android/gradle.properties
+          echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError" >> android/gradle.properties
+          echo "kotlin.daemon.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=1g" >> android/gradle.properties
 
       - name: Build test APK (x86_64 only, for the emulator)
         working-directory: android
+        # About 7 minutes with a warm cache; fail fast rather than hang
+        timeout-minutes: 40
         run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 --no-daemon
 
       - name: Install Maestro
