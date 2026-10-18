@@ -5,11 +5,10 @@ name: Save with no name shows the required-field hint
 - tapOn:
     id: "empty-add-button"
 - assertVisible: "Repeat every \\(optional\\)"
-# With no name, Save reports itself as disabled to accessibility (it can't
-# save yet) while staying tappable to show the hint
+# The name field takes focus on open; close the keyboard so Save shows
+- hideKeyboard
 - tapOn:
     id: "add-save-button"
-    enabled: false
 - assertVisible: "Add a name to save"
 - takeScreenshot: 08-required-name-hint
 # Typing a name clears the hint
