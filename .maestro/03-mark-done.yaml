@@ -7,15 +7,18 @@ name: Mark an item done
 - tapOn:
     id: "add-name-input"
 - inputText: "Car service"
+# Not a keyboard test (Save with the keyboard open has its own flow)
+- hideKeyboard
 # Last done: same day last year, so "Done" visibly changes the card
+- scrollUntilVisible:
+    element:
+      id: "add-last-done-button"
 - tapOn:
     id: "add-last-done-button"
 - tapOn:
     id: "date-year-${new Date().getFullYear() - 1}"
 - tapOn:
     id: "date-picker-done"
-# Not a keyboard test (Save with the keyboard open has its own flow)
-- hideKeyboard
 # "Car service" starts at its usual gap, every 12 months
 - scrollUntilVisible:
     element:
