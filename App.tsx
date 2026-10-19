@@ -30,6 +30,7 @@ import MainListScreen from './src/screens/MainListScreen';
 import AddItemScreen from './src/screens/AddItemScreen';
 import EditItemScreen from './src/screens/EditItemScreen';
 import DetailScreen from './src/screens/DetailScreen';
+import EditHistoryEntryScreen from './src/screens/EditHistoryEntryScreen';
 import AccountScreen from './src/screens/AccountScreen';
 import ChangePasswordScreen from './src/screens/ChangePasswordScreen';
 import ChangeEmailScreen from './src/screens/ChangeEmailScreen';
@@ -75,7 +76,8 @@ function AppNavigator() {
       <AppStack.Screen name="Main" component={MainListScreen} options={{ headerShown: false }} />
       <AppStack.Screen name="Add" component={AddItemScreen} options={{ title: 'Track something' }} />
       <AppStack.Screen name="Edit" component={EditItemScreen} options={{ title: 'Edit' }} />
-      <AppStack.Screen name="Detail" component={DetailScreen} options={{ title: 'History' }} />
+      <AppStack.Screen name="Detail" component={DetailScreen} options={{ headerShown: false }} />
+      <AppStack.Screen name="EditEntry" component={EditHistoryEntryScreen} options={{ title: '' }} />
       <AppStack.Screen name="Account" component={AccountScreen} options={{ title: 'Account' }} />
       <AppStack.Screen
         name="ChangePassword"

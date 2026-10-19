@@ -1,6 +1,18 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { chipLabel, intervalProgress, summaryCounts, lastDoneText } from './display.ts';
+import {
+  chipLabel,
+  intervalProgress,
+  summaryCounts,
+  lastDoneText,
+  intervalText,
+  repeatText,
+  daysAgoText,
+  daysAheadText,
+  dueCaption,
+  entryCaption,
+  historySummary,
+} from './display.ts';
 import type { ItemStatus } from '../../types';
 
 const status = (s: Partial<ItemStatus>): ItemStatus => ({
@@ -54,5 +66,36 @@ describe('lastDoneText', () => {
     assert.equal(lastDoneText(0), 'Done today');
     assert.equal(lastDoneText(1), 'Last done yesterday');
     assert.equal(lastDoneText(38), 'Last done 38 days ago');
+  });
+});
+
+describe('item screen wording', () => {
+  test('repeat subtitle', () => {
+    assert.equal(repeatText(30, 'days'), 'Repeats every 30 days');
+    assert.equal(repeatText(1, 'years'), 'Repeats every year');
+    assert.equal(repeatText(null, null), 'Once off');
+    assert.equal(intervalText(1, 'weeks'), '1 week');
+  });
+  test('days ago and ahead', () => {
+    assert.equal(daysAgoText(0), 'today');
+    assert.equal(daysAgoText(1), 'yesterday');
+    assert.equal(daysAgoText(38), '38 days ago');
+    assert.equal(daysAheadText(1), 'tomorrow');
+    assert.equal(daysAheadText(24), 'in 24 days');
+  });
+  test('due marker caption', () => {
+    assert.equal(dueCaption(-8, 30, 'days'), '30 days after your last one. Still waiting.');
+    assert.equal(dueCaption(0, 30, 'days'), '30 days after your last one. Still waiting.');
+    assert.equal(dueCaption(24, 30, 'days'), 'Due in 24 days');
+  });
+  test('entry captions', () => {
+    assert.equal(entryCaption(null), 'First time · when you started tracking');
+    assert.equal(entryCaption(33), 'Done again · 33 days after the last');
+    assert.equal(entryCaption(1), 'Done again · 1 day after the last');
+    assert.equal(entryCaption(0), 'Done again · same day as the last');
+  });
+  test('history summary', () => {
+    assert.equal(historySummary(4, 32), '4 entries · about every 32 days');
+    assert.equal(historySummary(1, null), '1 entry');
   });
 });

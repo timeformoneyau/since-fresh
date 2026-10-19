@@ -62,6 +62,7 @@ export type RootStackParamList = {
   Add: undefined;
   Edit: { itemId: string };
   Detail: { itemId: string };
+  EditEntry: { itemId: string; entryId: string };
   Account: undefined;
   ChangePassword: undefined;
   ChangeEmail: undefined;

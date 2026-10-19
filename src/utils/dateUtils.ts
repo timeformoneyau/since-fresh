@@ -20,6 +20,11 @@ export function parseDate(dateStr: string): Date {
   return startOfDay(parseISO(dateStr));
 }
 
+/** Short date without the year, e.g. "28 Mar" */
+export function formatShort(date: Date): string {
+  return format(date, 'd MMM');
+}
+
 /** Format a Date for display, e.g. "28 Mar 2026" */
 export function formatDisplay(date: Date): string {
   return format(date, 'd MMM yyyy');

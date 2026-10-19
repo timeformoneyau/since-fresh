@@ -1,0 +1,55 @@
+appId: com.since.app
+name: Item screen, Done today, then add a note to the newest entry
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Car service"
+- hideKeyboard
+# Last done: same day last year
+- tapOn:
+    id: "add-last-done-button"
+- tapOn:
+    id: "date-year-${new Date().getFullYear() - 1}"
+- tapOn:
+    id: "date-picker-done"
+- runFlow: subflows/set-repeat-yearly.yaml
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Car service"
+    timeout: 10000
+# Open the item screen
+- tapOn:
+    id: "item-Car service-history"
+- extendedWaitUntil:
+    visible:
+      id: "detail-status-card"
+    timeout: 10000
+- assertVisible: "Repeats every year"
+- tapOn:
+    id: "detail-mark-done-button"
+- assertVisible: "2 entries"
+- takeScreenshot: 10-item-screen
+# Edit the newest entry: add a note
+- scrollUntilVisible:
+    element:
+      id: "history-edit-0"
+- tapOn:
+    id: "history-edit-0"
+- tapOn:
+    id: "entry-note-input"
+- inputText: "New tyres"
+- hideKeyboard
+- tapOn:
+    id: "entry-save-button"
+- extendedWaitUntil:
+    visible: "New tyres"
+    timeout: 10000
+- takeScreenshot: 10-entry-note

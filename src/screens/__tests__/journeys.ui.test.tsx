@@ -2,7 +2,9 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import App from '../../../App';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createItem } from '../../domain/items/service';
+import { Alert } from 'react-native';
+import { createItem, addHistoryEntry } from '../../domain/items/service';
+import { todayString as todayIso } from '../../utils/dateUtils';
 
 // Each test renders the whole app in local-only mode (jest.ui.setup.js),
 // starting from an empty list.
@@ -109,24 +111,104 @@ it('marks done from the list, then Undo puts the previous date back', async () =
   await waitFor(() => expect(screen.getByTestId('item-Gym bag')).toHaveTextContent(/days ago/));
 });
 
-it('History screen: Mark done today, Undo from the toast, and Undo later from the list', async () => {
-  await createItem({ name: 'Bike chain', category: 'Other', lastDoneDate: '2026-01-01', repeatValue: null, repeatUnit: null });
+it('Item screen: Done today, Undo from the toast, and later remove the entry from its edit screen', async () => {
+  await createItem({ name: 'Bike chain', category: 'Other', lastDoneDate: '2026-01-01', repeatValue: 3, repeatUnit: 'months' });
   render(<App />);
   fireEvent.press(await screen.findByTestId('item-Bike chain-history'));
 
-  // Nothing to undo yet: only the entry from adding it
-  await screen.findByTestId('detail-mark-done-button');
-  expect(screen.queryByTestId('detail-undo-latest')).toBeNull();
-
+  expect(await screen.findByTestId('detail-history-summary')).toHaveTextContent('1 entry');
   fireEvent.press(screen.getByTestId('detail-mark-done-button'));
-  expect(await screen.findByTestId('detail-undo-latest')).toBeTruthy();
+  await waitFor(() => expect(screen.getByTestId('detail-history-summary')).toHaveTextContent('2 entries'));
   fireEvent.press(screen.getByTestId('toast-action'));
-  await waitFor(() => expect(screen.queryByTestId('detail-undo-latest')).toBeNull());
+  await waitFor(() => expect(screen.getByTestId('detail-history-summary')).toHaveTextContent('1 entry'));
 
-  // Mark done again, then undo it later from History
+  // Done again, then delete that entry later from its edit screen
   fireEvent.press(screen.getByTestId('detail-mark-done-button'));
-  fireEvent.press(await screen.findByTestId('detail-undo-latest'));
-  await waitFor(() => expect(screen.queryByTestId('detail-undo-latest')).toBeNull());
+  await waitFor(() => expect(screen.getByTestId('detail-history-summary')).toHaveTextContent('2 entries'));
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+    buttons?.find((b) => b.style === 'destructive')?.onPress?.();
+  });
+  fireEvent.press(screen.getByTestId('history-edit-0'));
+  fireEvent.press(await screen.findByTestId('entry-delete-button'));
+  await waitFor(() => expect(screen.getByTestId('detail-history-summary')).toHaveTextContent('1 entry'));
+  alert.mockRestore();
+});
+
+it('Item screen: status columns, the due marker and the history timeline', async () => {
+  // Every 30 days; done 3 times, latest long ago, so it's overdue
+  const created = await createItem({ name: 'Haircut', category: 'Health', lastDoneDate: '2025-06-06', repeatValue: 30, repeatUnit: 'days' });
+  await addHistoryEntry(created.id, '2025-07-08');
+  await addHistoryEntry(created.id, '2025-08-09');
+  await addHistoryEntry(created.id, '2025-09-11');
+  render(<App />);
+  fireEvent.press(await screen.findByTestId('item-Haircut-history'));
+
+  expect(await screen.findByText('Repeats every 30 days')).toBeTruthy();
+  const card = screen.getByTestId('detail-status-card');
+  expect(card).toHaveTextContent(/Last done.*11 Sep/);
+  expect(card).toHaveTextContent(/Was due.*11 Oct/);
+  expect(card).toHaveTextContent(/Usually.*32 days.*between each/);
+  expect(screen.getByTestId('detail-history-summary')).toHaveTextContent('4 entries · about every 32 days');
+  expect(screen.getByTestId('detail-due-marker')).toHaveTextContent(/Due 11 Oct 2025.*30 days after your last one\. Still waiting\./);
+  expect(screen.getByTestId('history-entry-0')).toHaveTextContent(/11 Sep 2025.*Done again · 33 days after the last/);
+  expect(screen.getByTestId('history-entry-3')).toHaveTextContent(/6 Jun 2025.*First time · when you started tracking/);
+  expect(screen.getByLabelText('Edit the 11 Sep 2025 entry')).toBeTruthy();
+});
+
+it('Item screen: a once-off item has no Done today and no due marker', async () => {
+  await createItem({ name: 'Passport', category: 'Admin', lastDoneDate: '2025-05-01', repeatValue: null, repeatUnit: null });
+  render(<App />);
+  fireEvent.press(await screen.findByTestId('item-Passport-history'));
+  expect(await screen.findAllByText('Once off')).not.toHaveLength(0);
+  expect(screen.queryByTestId('detail-mark-done-button')).toBeNull();
+  expect(screen.queryByTestId('detail-due-marker')).toBeNull();
+  expect(screen.getByTestId('detail-add-past-entry')).toBeTruthy();
+});
+
+it('Edit entry: the note saves; a date outside the neighbours is refused; the last entry stays', async () => {
+  const created = await createItem({ name: 'Filter', category: 'Household', lastDoneDate: '2025-03-01', repeatValue: 3, repeatUnit: 'months' });
+  await addHistoryEntry(created.id, '2025-06-01');
+  render(<App />);
+  fireEvent.press(await screen.findByTestId('item-Filter-history'));
+
+  // Newest entry: add a note
+  fireEvent.press(await screen.findByTestId('history-edit-0'));
+  expect(await screen.findByText('Filter · entry 2 of 2')).toBeTruthy();
+  expect(screen.getByTestId('entry-date-help')).toHaveTextContent('Somewhere between 1 Mar 2025 and today.');
+  fireEvent.changeText(screen.getByTestId('entry-note-input'), 'New brand');
+  fireEvent.press(screen.getByTestId('entry-save-button'));
+  expect(await screen.findByText('New brand')).toBeTruthy();
+
+  // Move the newest entry to the year before its older neighbour: refused
+  fireEvent.press(screen.getByTestId('history-edit-0'));
+  fireEvent.press(await screen.findByTestId('entry-date-button'));
+  fireEvent.press(await screen.findByTestId('date-year-2024'));
+  fireEvent.press(screen.getByTestId('date-picker-done'));
+  fireEvent.press(screen.getByTestId('entry-save-button'));
+  expect(await screen.findByTestId('entry-error')).toHaveTextContent(/between the entries either side/);
+});
+
+it('Edit entry: the only entry can\'t be deleted', async () => {
+  await createItem({ name: 'Mattress', category: 'Household', lastDoneDate: '2025-03-01', repeatValue: null, repeatUnit: null });
+  render(<App />);
+  fireEvent.press(await screen.findByTestId('item-Mattress-history'));
+  fireEvent.press(await screen.findByTestId('history-edit-0'));
+  fireEvent.press(await screen.findByTestId('entry-delete-button'));
+  expect(await screen.findByTestId('entry-error')).toHaveTextContent(
+    'Every item needs at least one entry. Delete the item instead.',
+  );
+});
+
+it('Item screen: add a past entry', async () => {
+  await createItem({ name: 'Gutters', category: 'Household', lastDoneDate: todayIso(), repeatValue: 1, repeatUnit: 'years' });
+  render(<App />);
+  fireEvent.press(await screen.findByTestId('item-Gutters-history'));
+  fireEvent.press(await screen.findByTestId('detail-add-past-entry'));
+  fireEvent.press(await screen.findByTestId(`date-year-${new Date().getFullYear() - 1}`));
+  fireEvent.press(screen.getByTestId('date-picker-done'));
+  await waitFor(() => expect(screen.getByTestId('detail-history-summary')).toHaveTextContent('2 entries'));
+  // An older entry doesn't change when it was last done
+  expect(screen.getByTestId('detail-status-card')).toHaveTextContent(/Last done.*today/);
 });
 
 it('History screen has a visible way to Edit', async () => {

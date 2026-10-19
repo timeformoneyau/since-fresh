@@ -51,3 +51,53 @@ export function lastDoneText(daysSince: number): string {
   if (daysSince === 1) return 'Last done yesterday';
   return `Last done ${daysSince} days ago`;
 }
+
+type Unit = 'days' | 'weeks' | 'months' | 'years';
+
+/** "30 days", "1 week", "6 months". */
+export function intervalText(value: number, unit: Unit): string {
+  return `${value} ${value === 1 ? unit.slice(0, -1) : unit}`;
+}
+
+/** Subtitle on the item screen: "Repeats every 30 days", "Repeats every year", or "Once off". */
+export function repeatText(value: number | null, unit: Unit | null): string {
+  if (value === null || unit === null) return ONCE_OFF;
+  return value === 1 ? `Repeats every ${unit.slice(0, -1)}` : `Repeats every ${intervalText(value, unit)}`;
+}
+
+/** "today", "yesterday", "38 days ago". */
+export function daysAgoText(days: number): string {
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return `${days} days ago`;
+}
+
+/** "today", "tomorrow", "in 24 days". */
+export function daysAheadText(days: number): string {
+  if (days <= 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  return `in ${days} days`;
+}
+
+/** Caption under the "Due" marker at the top of a repeating item's history. */
+export function dueCaption(daysUntilDue: number, value: number, unit: Unit): string {
+  if (daysUntilDue > 0) return `Due ${daysAheadText(daysUntilDue)}`;
+  return `${intervalText(value, unit)} after your last one. Still waiting.`;
+}
+
+/**
+ * Caption for a history entry. gapFromPrevious is the days since the entry
+ * before it, or null for the first ever entry.
+ */
+export function entryCaption(gapFromPrevious: number | null): string {
+  if (gapFromPrevious === null) return 'First time · when you started tracking';
+  if (gapFromPrevious === 0) return 'Done again · same day as the last';
+  if (gapFromPrevious === 1) return 'Done again · 1 day after the last';
+  return `Done again · ${gapFromPrevious} days after the last`;
+}
+
+/** "4 entries · about every 32 days", or "1 entry". */
+export function historySummary(count: number, usualDays: number | null): string {
+  const entries = count === 1 ? '1 entry' : `${count} entries`;
+  return usualDays === null ? entries : `${entries} · about every ${usualDays} days`;
+}
