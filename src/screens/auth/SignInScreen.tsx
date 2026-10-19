@@ -15,7 +15,7 @@ import { AuthStackParamList } from '../../types';
 import { signIn, resendSignupCode } from '../../domain/auth/service';
 import { friendlyAuthError, authErrorCode } from '../../domain/auth/errors';
 import { takeSignInNotice, onSignInNotice } from '../../domain/auth/sessionNotice';
-import { colours } from '../../components/colours';
+import { colours } from '../../theme/tokens';
 import { authStyles as s } from './authStyles';
 
 type Nav = NativeStackNavigationProp<AuthStackParamList, 'SignIn'>;

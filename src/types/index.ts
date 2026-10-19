@@ -1,10 +1,17 @@
 export type RepeatUnit = 'days' | 'weeks' | 'months' | 'years';
 
-/** A single logged completion. */
+/** A single logged completion (an entry in the item's history). */
 export interface CompletionEvent {
   id: string;
   date: string; // ISO date string (YYYY-MM-DD)
+  /** Optional note. Added in the redesign; older entries have none. */
+  note?: string;
+  /** When the entry was recorded. Older entries have none. */
+  createdAt?: string;
 }
+
+/** The brief's name for a completion event. */
+export type HistoryEntry = CompletionEvent;
 
 export interface SinceItem {
   id: string;
@@ -12,8 +19,9 @@ export interface SinceItem {
   category: string;
   lastDoneDate: string; // ISO date string (YYYY-MM-DD)
   /**
-   * Completion log, newest first. When non-empty, history[0].date mirrors
-   * lastDoneDate.
+   * Completion log, newest first (by date). Never empty for a stored item.
+   * lastDoneDate is kept for older builds, and always equals history[0].date
+   * after any change (domain/items/history.ts, withHistory).
    */
   history: CompletionEvent[];
   repeatValue: number | null;
@@ -54,6 +62,7 @@ export type RootStackParamList = {
   Add: undefined;
   Edit: { itemId: string };
   Detail: { itemId: string };
+  EditEntry: { itemId: string; entryId: string };
   Account: undefined;
   ChangePassword: undefined;
   ChangeEmail: undefined;

@@ -9,14 +9,27 @@ import {
 } from 'react-native';
 import { SinceItem } from '../types';
 import { computeItemStatus, secondaryLine } from '../utils/statusUtils';
-import { colours, statusColour } from './colours';
+import { intervalProgress, lastDoneText } from '../domain/items/display';
+import {
+  colours,
+  palette,
+  statusColour,
+  fonts,
+  type,
+  radius,
+  space,
+  cardShadow,
+  TAP,
+} from '../theme/tokens';
+import CategoryTile from './CategoryTile';
+import StatusChip from './StatusChip';
 
 interface Props {
   item: SinceItem;
   onMarkDone: (item: SinceItem) => void;
   onEdit: (item: SinceItem) => void;
   onDelete: (item: SinceItem) => void;
-  /** Opens the item's completion history. */
+  /** Opens the item screen. */
   onPress?: (item: SinceItem) => void;
 }
 
@@ -24,7 +37,6 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
   const status = computeItemStatus(item);
   const { label, daysSince } = status;
   const secondary = secondaryLine(status);
-  const accent = statusColour(label);
 
   const translateX = useRef(new Animated.Value(0)).current;
   const SWIPE_THRESHOLD = 80;
@@ -65,12 +77,8 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
     onDelete(item);
   }
 
-  const sinceText =
-    daysSince === 0
-      ? 'Done today'
-      : daysSince === 1
-      ? 'Last done yesterday'
-      : `Last done ${daysSince} days ago`;
+  const progress = intervalProgress(status);
+  const once = label === null;
 
   return (
     <View style={styles.container} testID={`item-${item.name}`}>
@@ -96,57 +104,54 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
         </TouchableOpacity>
       </View>
 
-      {/* Row */}
       <Animated.View
-        style={[styles.row, { transform: [{ translateX }] }]}
+        style={[styles.card, { transform: [{ translateX }] }]}
         testID={`item-${item.name}-row`}
         {...panResponder.panHandlers}
       >
-        {/* Left state indicator */}
-        <View style={[styles.accentBar, { backgroundColor: accent }]} />
-
-        <View
-          style={styles.content}
-          onStartShouldSetResponder={() => false}
-        >
-          <View style={styles.topRow}>
-            {onPress ? (
-              <TouchableOpacity
-                style={styles.nameWrap}
-                onPress={() => onPress(item)}
-                testID={`item-${item.name}-history`}
-                accessibilityLabel={`${item.name} history`}
-                accessibilityRole="button"
-              >
-                <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
-            )}
+        <View style={styles.topRow}>
+          <TouchableOpacity
+            style={styles.titleArea}
+            onPress={() => onPress?.(item)}
+            disabled={!onPress}
+            testID={`item-${item.name}-history`}
+            accessibilityLabel={`Open ${item.name}`}
+            accessibilityRole="button"
+          >
+            <CategoryTile name={item.name} category={item.category} />
+            <View style={styles.titleText}>
+              <Text style={type.cardTitle}>{item.name}</Text>
+              <Text style={type.secondary}>{lastDoneText(daysSince)}</Text>
+            </View>
+          </TouchableOpacity>
+          {!once && (
             <TouchableOpacity
-              style={styles.doneBtn}
+              style={styles.donePill}
               onPress={() => onMarkDone(item)}
               testID={`item-${item.name}-done`}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               accessibilityLabel={`Mark ${item.name} done`}
               accessibilityRole="button"
             >
-              <Text style={styles.doneBtnText}>Done</Text>
+              <Text style={styles.donePillText}>Done</Text>
             </TouchableOpacity>
-          </View>
-
-          <Text style={styles.sinceText}>{sinceText}</Text>
-
-          {label !== null ? (
-            <Text style={styles.statusText}>
-              <Text style={{ color: accent }}>{label}</Text>
-              <Text style={styles.dot}>{'  ·  '}</Text>
-              <Text>{secondary}</Text>
-            </Text>
-          ) : (
-            <Text style={styles.statusText}>Tracked only</Text>
           )}
         </View>
+
+        <View style={styles.statusRow}>
+          <StatusChip label={label} />
+          <Text style={[type.secondary, styles.statusLine]}>{secondary}</Text>
+        </View>
+
+        {progress !== null && (
+          <View style={styles.barTrack} testID={`item-${item.name}-bar`}>
+            <View
+              style={[
+                styles.barFill,
+                { width: `${Math.round(progress * 100)}%`, backgroundColor: statusColour(label) },
+              ]}
+            />
+          </View>
+        )}
       </Animated.View>
     </View>
   );
@@ -154,12 +159,16 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
 
 const styles = StyleSheet.create({
   container: {
-    overflow: 'hidden',
+    marginHorizontal: space.screen,
+    marginBottom: space.cardGap,
+    borderRadius: radius.card,
   },
   actionsRow: {
     ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    borderRadius: radius.card,
+    overflow: 'hidden',
   },
   actionBtn: {
     width: 65,
@@ -167,7 +176,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   editBtn: {
-    backgroundColor: '#4A4A47',
+    backgroundColor: palette.navy,
   },
   deleteBtn: {
     backgroundColor: colours.destructive,
@@ -175,58 +184,62 @@ const styles = StyleSheet.create({
   actionText: {
     color: '#fff',
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
   },
-  row: {
-    flexDirection: 'row',
-    backgroundColor: colours.background,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colours.border,
-  },
-  accentBar: {
-    width: 3,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+  card: {
+    backgroundColor: palette.card,
+    borderRadius: radius.card,
+    padding: space.cardPadding,
+    ...cardShadow,
   },
   topRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 3,
+    alignItems: 'center',
   },
-  nameWrap: {
+  titleArea: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: TAP,
     marginRight: 8,
   },
-  name: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colours.textPrimary,
+  titleText: {
     flex: 1,
-    marginRight: 8,
+    marginLeft: 12,
   },
-  doneBtn: {
-    paddingTop: 1,
+  donePill: {
+    minHeight: TAP,
+    minWidth: 64,
+    paddingHorizontal: 16,
+    borderRadius: radius.pill,
+    backgroundColor: palette.doneBg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  doneBtnText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: colours.textMuted,
-    letterSpacing: 0.1,
+  donePillText: {
+    fontFamily: fonts.bold,
+    fontSize: 14,
+    color: palette.navy,
   },
-  sinceText: {
-    fontSize: 13,
-    color: colours.textSecondary,
-    marginBottom: 5,
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
   },
-  statusText: {
-    fontSize: 12,
-    color: colours.textMuted,
+  statusLine: {
+    flexShrink: 1,
   },
-  dot: {
-    color: colours.border,
+  barTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: palette.barTrack,
+    marginTop: 10,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: 6,
+    borderRadius: 3,
   },
 });

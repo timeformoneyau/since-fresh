@@ -91,3 +91,78 @@ describe('parseAndMigrate', () => {
     assert.equal(STORAGE_VERSION, 3);
   });
 });
+
+describe('history (redesign)', () => {
+  const stored = (overrides: Record<string, unknown>) =>
+    JSON.stringify({
+      version: 3,
+      items: [
+        {
+          ...base,
+          id: 'hair',
+          name: 'Haircut',
+          category: 'Health',
+          lastDoneDate: '2026-09-11',
+          repeatValue: 30,
+          repeatUnit: 'days',
+          ...overrides,
+        },
+      ],
+    });
+
+  test('an item with lastDoneDate and no history gets a one-entry history; a second run changes nothing', () => {
+    const once = parseAndMigrate(stored({}));
+    assert.deepEqual(once[0].history, [{ id: 'hair_seed', date: '2026-09-11' }]);
+    assert.equal(once[0].lastDoneDate, '2026-09-11');
+
+    const twice = parseAndMigrate(JSON.stringify({ version: STORAGE_VERSION, items: once }));
+    assert.deepEqual(twice, once);
+  });
+
+  test('entries written before the redesign (no note or createdAt) load unchanged', () => {
+    const history = [
+      { id: 'b', date: '2026-09-11' },
+      { id: 'a', date: '2026-08-09' },
+    ];
+    assert.deepEqual(parseAndMigrate(stored({ history }))[0].history, history);
+  });
+
+  test('note and createdAt on entries are kept', () => {
+    const history = [
+      { id: 'b', date: '2026-09-11', note: 'Shorter', createdAt: '2026-09-11T08:00:00.000Z' },
+      { id: 'a', date: '2026-08-09' },
+    ];
+    assert.deepEqual(parseAndMigrate(stored({ history }))[0].history, history);
+  });
+
+  test('a lastDoneDate moved later by the old Edit screen gets its own entry, so it never moves back', () => {
+    const history = [{ id: 'a', date: '2026-08-09' }];
+    const items = parseAndMigrate(stored({ lastDoneDate: '2026-09-11', history }));
+    assert.equal(items[0].lastDoneDate, '2026-09-11');
+    assert.deepEqual(items[0].history, [
+      { id: 'hair_last_2026-09-11', date: '2026-09-11' },
+      { id: 'a', date: '2026-08-09' },
+    ]);
+    // Idempotent
+    const again = parseAndMigrate(JSON.stringify({ version: STORAGE_VERSION, items }));
+    assert.deepEqual(again, items);
+  });
+
+  test('a lastDoneDate between entries is slotted into date order; nothing is removed', () => {
+    const history = [
+      { id: 'c', date: '2026-10-01' },
+      { id: 'a', date: '2026-08-09' },
+    ];
+    const items = parseAndMigrate(stored({ lastDoneDate: '2026-09-11', history }));
+    assert.deepEqual(items[0].history.map((e) => e.id), ['c', 'hair_last_2026-09-11', 'a']);
+    assert.equal(items[0].lastDoneDate, '2026-09-11');
+  });
+
+  test('an item saved by the redesigned app still loads in the shape older builds read', () => {
+    const history = [{ id: 'b', date: '2026-09-11', note: 'x', createdAt: '2026-09-11T08:00:00.000Z' }];
+    const [item] = parseAndMigrate(stored({ history }));
+    // Older builds read history[0] as the latest entry and need lastDoneDate
+    assert.equal(item.history[0].date, item.lastDoneDate);
+    assert.equal(typeof item.lastDoneDate, 'string');
+  });
+});

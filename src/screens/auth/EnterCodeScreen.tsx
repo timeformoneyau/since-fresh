@@ -15,7 +15,7 @@ import { AuthStackParamList, RootStackParamList } from '../../types';
 import { verifyCode, resendCode, CodePurpose } from '../../domain/auth/service';
 import { friendlyAuthError } from '../../domain/auth/errors';
 import { secondsUntilResend, isValidCodeFormat } from '../../domain/auth/cooldown';
-import { colours } from '../../components/colours';
+import { colours } from '../../theme/tokens';
 import { authStyles as s } from './authStyles';
 
 type AuthNav = NativeStackNavigationProp<AuthStackParamList, 'EnterCode'>;

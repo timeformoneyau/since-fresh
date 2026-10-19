@@ -76,7 +76,7 @@ export function secondaryLine(status: ItemStatus): string {
   const { label, daysUntilDue, nextDueDate } = status;
 
   if (label === null || daysUntilDue === null || nextDueDate === null) {
-    return 'No repeat set';
+    return 'Kept as a record';
   }
 
   const absDays = Math.abs(daysUntilDue);

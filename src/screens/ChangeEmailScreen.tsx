@@ -15,7 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { getUser, requestEmailChange } from '../domain/auth/service';
 import { friendlyAuthError } from '../domain/auth/errors';
-import { colours } from '../components/colours';
+import { colours, fonts } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'ChangeEmail'>;
 
@@ -107,11 +107,11 @@ export default function ChangeEmailScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colours.background },
   content: { padding: 20, paddingBottom: 60, gap: 20 },
-  body: { fontSize: 14, color: colours.textSecondary, lineHeight: 20 },
+  body: { fontFamily: fonts.regular, fontSize: 14, color: colours.textSecondary, lineHeight: 20 },
   field: { gap: 6 },
   label: {
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     color: colours.textMuted,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
@@ -123,10 +123,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    fontSize: 15,
+    fontFamily: fonts.regular, fontSize: 15,
     color: colours.textPrimary,
   },
-  errorText: { fontSize: 13, color: colours.destructive },
+  errorText: { fontFamily: fonts.regular, fontSize: 13, color: colours.destructive },
   saveBtn: {
     backgroundColor: colours.textPrimary,
     paddingVertical: 15,
@@ -134,5 +134,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   btnDisabled: { opacity: 0.5 },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  saveBtnText: { color: '#fff', fontSize: 15, fontFamily: fonts.semibold },
 });

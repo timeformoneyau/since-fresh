@@ -13,7 +13,7 @@ import {
   Pressable,
 } from 'react-native';
 import { parseDate, formatStorage } from '../utils/dateUtils';
-import { colours } from './colours';
+import { colours, fonts } from '../theme/tokens';
 
 interface Props {
   value: string; // YYYY-MM-DD
@@ -157,9 +157,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colours.border,
   },
-  toolbarCancel: { fontSize: 15, color: colours.textSecondary },
-  toolbarTitle: { fontSize: 15, fontWeight: '600', color: colours.textPrimary },
-  toolbarDone: { fontSize: 15, fontWeight: '600', color: colours.textPrimary },
+  toolbarCancel: { fontFamily: fonts.regular, fontSize: 15, color: colours.textSecondary },
+  toolbarTitle: { fontSize: 15, fontFamily: fonts.semibold, color: colours.textPrimary },
+  toolbarDone: { fontSize: 15, fontFamily: fonts.semibold, color: colours.textPrimary },
   pickers: {
     flexDirection: 'row',
     height: ITEM_H * 3 + ITEM_H * 2, // 3 visible rows + 2 padding rows
@@ -179,11 +179,11 @@ const styles = StyleSheet.create({
     borderColor: colours.border,
   },
   wheelItemText: {
-    fontSize: 15,
+    fontFamily: fonts.regular, fontSize: 15,
     color: colours.textSecondary,
   },
   wheelItemTextSelected: {
     color: colours.textPrimary,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
   },
 });

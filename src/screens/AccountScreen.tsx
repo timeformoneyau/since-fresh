@@ -17,7 +17,7 @@ import { hasPending } from '../domain/sync/queue';
 import { loadLastSyncedAt } from '../domain/sync/lastSynced';
 import { describeLastBackup, describeSyncOutcome } from '../domain/sync/backupStatus';
 import { friendlyAuthError } from '../domain/auth/errors';
-import { colours } from '../components/colours';
+import { colours, fonts } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Account'>;
 
@@ -196,15 +196,15 @@ const styles = StyleSheet.create({
   section: { marginBottom: 28 },
   label: {
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     color: colours.textMuted,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     marginBottom: 8,
   },
-  email: { fontSize: 16, color: colours.textPrimary, fontWeight: '500' },
-  body: { fontSize: 14, color: colours.textSecondary, marginBottom: 10 },
-  note: { fontSize: 13, color: colours.textSecondary, marginTop: 8, lineHeight: 18 },
+  email: { fontSize: 16, color: colours.textPrimary, fontFamily: fonts.medium },
+  body: { fontFamily: fonts.regular, fontSize: 14, color: colours.textSecondary, marginBottom: 10 },
+  note: { fontFamily: fonts.regular, fontSize: 13, color: colours.textSecondary, marginTop: 8, lineHeight: 18 },
   rowButton: {
     paddingVertical: 13,
     paddingHorizontal: 14,
@@ -215,8 +215,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     alignItems: 'flex-start',
   },
-  rowButtonText: { fontSize: 15, color: colours.textPrimary },
+  rowButtonText: { fontFamily: fonts.regular, fontSize: 15, color: colours.textPrimary },
   deleteBtn: { paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  deleteBtnText: { fontSize: 14, color: colours.destructive, fontWeight: '500' },
+  deleteBtnText: { fontSize: 14, color: colours.destructive, fontFamily: fonts.medium },
   btnDisabled: { opacity: 0.5 },
 });

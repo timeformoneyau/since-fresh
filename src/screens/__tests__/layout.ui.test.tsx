@@ -46,7 +46,8 @@ function expectKeyboardSafe(minBottomPadding: number) {
 it('empty list keeps its content below the status bar', async () => {
   render(<App />);
   await screen.findByTestId('empty-add-button');
-  expect(isBelowStatusBar('empty-add-button')).toBe(true);
+  // The navy header band runs under the status bar; its ＋ must not
+  expect(isBelowStatusBar('main-add-button')).toBe(true);
 });
 
 it('Add screen: keyboard avoidance and Save clear of the nav bar', async () => {

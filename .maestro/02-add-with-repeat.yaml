@@ -9,18 +9,15 @@ name: Add an item with a repeat cycle
 - inputText: "Water plants"
 # This flow is about the repeat, not the keyboard (07 covers Save with it open)
 - hideKeyboard
+# Repeats is the default, every 30 days; one more makes it 31
 - scrollUntilVisible:
     element:
-      id: "add-repeat-input"
+      id: "add-stepper-plus"
 - tapOn:
-    id: "add-repeat-input"
-- inputText: "2"
-- hideKeyboard
-- scrollUntilVisible:
-    element:
-      id: "add-unit-weeks"
-- tapOn:
-    id: "add-unit-weeks"
+    id: "add-stepper-plus"
+- assertVisible:
+    id: "add-repeat-value"
+    text: "31"
 - scrollUntilVisible:
     element:
       id: "add-save-button"
@@ -30,5 +27,5 @@ name: Add an item with a repeat cycle
     visible:
       id: "item-Water plants"
     timeout: 10000
-- assertVisible: ".*in 14 days.*"
+- assertVisible: ".*in 31 days.*"
 - takeScreenshot: 02-add-with-repeat

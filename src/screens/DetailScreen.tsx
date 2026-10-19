@@ -1,59 +1,59 @@
 import React, { useCallback, useState } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-} from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, StatusBar } from 'react-native';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList, CompletionEvent } from '../types';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { RootStackParamList } from '../types';
 import { DerivedItem } from '../domain/items/types';
 import {
   getDerivedItemById,
   markItemDone,
   undoMarkDone,
-  canUndoDone,
+  addHistoryEntry,
+  usualIntervalDays,
+  gapsNewestFirst,
+  HistoryError,
 } from '../domain/items/service';
+import {
+  repeatText,
+  daysAgoText,
+  daysAheadText,
+  dueCaption,
+  entryCaption,
+  historySummary,
+} from '../domain/items/display';
 import { secondaryLine } from '../utils/statusUtils';
-import { humaniseDaysSince, parseDate, formatDisplay, getDaysSince } from '../utils/dateUtils';
-import { colours, statusColour } from '../components/colours';
+import { parseDate, formatDisplay, formatShort, todayString } from '../utils/dateUtils';
+import {
+  palette,
+  colours,
+  fonts,
+  type,
+  radius,
+  space,
+  cardShadow,
+  statusColour,
+  TAP,
+} from '../theme/tokens';
 import { useToast } from '../components/Toast';
+import CategoryTile from '../components/CategoryTile';
+import StatusChip from '../components/StatusChip';
+import DatePickerModal from '../components/DatePickerModal';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Detail'>;
 type Route = RouteProp<RootStackParamList, 'Detail'>;
 
-/**
- * Mean interval between consecutive completions, in days.
- * Needs at least two entries to describe a gap. Ported from `since`.
- */
-function averageGapDays(history: CompletionEvent[]): number | null {
-  if (history.length < 2) return null;
-  const sorted = [...history].sort((a, b) => b.date.localeCompare(a.date));
-  let total = 0;
-  for (let i = 0; i < sorted.length - 1; i++) {
-    total += getDaysSince(sorted[i + 1].date) - getDaysSince(sorted[i].date);
-  }
-  return Math.round(total / (sorted.length - 1));
-}
+const display = (date: string) => formatDisplay(parseDate(date));
 
-function formatAverage(days: number): string {
-  if (days < 14) return `avg. ${days}d`;
-  if (days < 60) return `avg. ${Math.round(days / 7)}w`;
-  if (days < 730) return `avg. ${Math.round(days / 30)}mo`;
-  return `avg. ${Math.round(days / 365)}y`;
-}
-
-function gapBetween(olderDate: string, newerDate: string): number {
-  return getDaysSince(olderDate) - getDaysSince(newerDate);
-}
-
+/** The item screen: status, Done today, and the history timeline. */
 export default function DetailScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
+  const insets = useSafeAreaInsets();
   const { itemId } = route.params;
   const [item, setItem] = useState<DerivedItem | null>(null);
+  const [pickingPastDate, setPickingPastDate] = useState(false);
   const showToast = useToast();
 
   const refresh = useCallback(async () => {
@@ -67,14 +67,18 @@ export default function DetailScreen() {
   async function handleMarkDone() {
     if (!item) return;
     const previousLastDoneDate = item.lastDoneDate;
-    const updated = await markItemDone(item.id);
+    const { entryId } = await markItemDone(item.id);
     refresh();
+    if (!entryId) {
+      showToast({ message: 'Already marked as done today' });
+      return;
+    }
     showToast({
       message: 'Marked as done',
       actionLabel: 'Undo',
       onAction: async () => {
         try {
-          await undoMarkDone(itemId, updated.history[0].id, previousLastDoneDate);
+          await undoMarkDone(itemId, entryId, previousLastDoneDate);
           refresh();
         } catch {
           showToast({ message: "Couldn't undo. Please try again." });
@@ -83,149 +87,307 @@ export default function DetailScreen() {
     });
   }
 
-  /** Undo the latest completion later on, from the History list. */
-  async function handleUndoLatest(eventId: string) {
+  async function handleAddPast(date: string) {
+    setPickingPastDate(false);
     try {
-      await undoMarkDone(itemId, eventId);
+      await addHistoryEntry(itemId, date);
+      showToast({ message: `Added ${display(date)}` });
       refresh();
-    } catch {
-      showToast({ message: "Couldn't undo. Please try again." });
+    } catch (e) {
+      showToast({ message: e instanceof HistoryError ? e.message : "Couldn't add that. Please try again." });
     }
   }
 
   if (!item) return null;
 
-  const accent = statusColour(item.status.label);
-  const avg = averageGapDays(item.history);
-  const sorted = [...item.history].sort((a, b) => b.date.localeCompare(a.date));
+  const { status } = item;
+  const repeating = status.label !== null && item.repeatValue !== null && item.repeatUnit !== null;
+  const usual = usualIntervalDays(item);
+  const gaps = gapsNewestFirst(item);
+  const entries = item.history; // newest first
+  const overdue = status.daysUntilDue !== null && status.daysUntilDue <= 0;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.name}>{item.name}</Text>
+    <View style={styles.screen}>
+      <StatusBar barStyle="light-content" backgroundColor={palette.navy} />
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 + insets.bottom }}>
+        {/* Header band */}
+        <View style={[styles.band, { paddingTop: insets.top }]}>
+          <View style={styles.bandRow}>
+            <TouchableOpacity
+              style={styles.backLink}
+              onPress={() => navigation.goBack()}
+              testID="detail-back"
+              accessibilityRole="button"
+              accessibilityLabel="Back to Since"
+            >
+              <Text style={styles.backText}>‹ Since</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.editPill}
+              onPress={() => navigation.navigate('Edit', { itemId: item.id })}
+              testID="detail-edit-button"
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${item.name}`}
+            >
+              <Text style={styles.editPillText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+          <CategoryTile name={item.name} category={item.category} size={56} />
+          <Text style={styles.title} accessibilityRole="header">{item.name}</Text>
+          <Text style={styles.subtitle}>{repeatText(item.repeatValue, item.repeatUnit)}</Text>
+        </View>
 
-      <View style={styles.metaRow}>
-        <Text style={styles.category}>{item.category}</Text>
-        {avg !== null && <Text style={styles.avg}>{formatAverage(avg)}</Text>}
-        <TouchableOpacity
-          style={styles.editLink}
-          onPress={() => navigation.navigate('Edit', { itemId: item.id })}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          testID="detail-edit-button"
-          accessibilityRole="button"
-          accessibilityLabel={`Edit ${item.name}`}
-        >
-          <Text style={styles.editLinkText}>Edit</Text>
-        </TouchableOpacity>
-      </View>
+        {/* Status card */}
+        <View style={[styles.card, styles.statusCard]} testID="detail-status-card">
+          <View style={styles.statusRow}>
+            <StatusChip label={status.label} />
+            <Text style={[type.secondary, styles.shrink]}>{secondaryLine(status)}</Text>
+          </View>
+          <View style={styles.columns}>
+            <Column heading="Last done" value={formatShort(parseDate(item.lastDoneDate))} sub={daysAgoText(status.daysSince)} />
+            {status.nextDueDate && status.daysUntilDue !== null && (
+              <Column
+                heading={overdue ? 'Was due' : 'Next due'}
+                value={formatShort(status.nextDueDate)}
+                sub={overdue ? daysAgoText(-status.daysUntilDue) : daysAheadText(status.daysUntilDue)}
+              />
+            )}
+            {usual !== null && <Column heading="Usually" value={`${usual} days`} sub="between each" />}
+          </View>
+        </View>
 
-      {item.status.label !== null ? (
-        <Text style={styles.status}>
-          <Text style={{ color: accent }}>{item.status.label}</Text>
-          <Text style={styles.dot}>{'  ·  '}</Text>
-          <Text>{secondaryLine(item.status)}</Text>
-        </Text>
-      ) : (
-        <Text style={styles.status}>Tracked only</Text>
-      )}
+        <View style={styles.actions}>
+          {repeating && (
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={handleMarkDone}
+              testID="detail-mark-done-button"
+              accessibilityRole="button"
+              accessibilityLabel={`Mark ${item.name} done today`}
+            >
+              <Text style={styles.primaryBtnText}>Done today</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.textBtn}
+            onPress={() => setPickingPastDate(true)}
+            testID="detail-add-past-entry"
+            accessibilityRole="button"
+          >
+            <Text style={styles.textBtnText}>
+              Did it on another day? <Text style={styles.link}>Add a past entry</Text>
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      <TouchableOpacity
-        style={styles.doneBtn}
-        onPress={handleMarkDone}
-        testID="detail-mark-done-button"
-        accessibilityRole="button"
-        accessibilityLabel={`Mark ${item.name} done`}
-      >
-        <Text style={styles.doneBtnText}>Mark done today</Text>
-      </TouchableOpacity>
+        {/* History */}
+        <View style={styles.historyHeader}>
+          <Text style={type.sectionHeading} accessibilityRole="header">History</Text>
+          <Text style={[type.secondary, styles.shrink, styles.right]} testID="detail-history-summary">
+            {historySummary(entries.length, usual)}
+          </Text>
+        </View>
 
-      <Text style={styles.sectionLabel}>History</Text>
-
-      {sorted.length === 0 ? (
-        <Text style={styles.emptyHistory}>No completions logged yet.</Text>
-      ) : (
-        sorted.map((event, i) => {
-          const next = sorted[i + 1];
-          const gap = next ? gapBetween(next.date, event.date) : null;
-          return (
-            <View key={event.id} style={styles.historyRow}>
-              <View style={styles.historyBullet} />
-              <View style={styles.historyBody}>
-                <Text style={styles.historyDate}>
-                  {formatDisplay(parseDate(event.date))}
-                </Text>
-                <Text style={styles.historyMeta}>
-                  {humaniseDaysSince(getDaysSince(event.date))}
-                  {gap !== null && ` · ${gap} days after the previous`}
+        <View style={styles.timeline}>
+          {repeating && status.nextDueDate && status.daysUntilDue !== null && (
+            <TimelineRow dot={<View style={[styles.dueDot, { borderColor: statusColour(status.label) }]} />} first>
+              <View style={styles.dueCard} testID="detail-due-marker">
+                <Text style={styles.entryDate}>Due {formatDisplay(status.nextDueDate)}</Text>
+                <Text style={type.secondary}>
+                  {dueCaption(status.daysUntilDue, item.repeatValue!, item.repeatUnit!)}
                 </Text>
               </View>
-              {i === 0 && canUndoDone(item) && (
-                <TouchableOpacity
-                  onPress={() => handleUndoLatest(event.id)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  testID="detail-undo-latest"
-                  accessibilityRole="button"
-                  accessibilityLabel="Undo the latest entry"
-                >
-                  <Text style={styles.undoText}>Undo</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          );
-        })
+            </TimelineRow>
+          )}
+          {entries.map((entry, i) => {
+            const isLatest = i === 0;
+            const isFirstEver = i === entries.length - 1;
+            const dot = isLatest ? (
+              <View style={styles.latestDotHalo}><View style={styles.latestDot} /></View>
+            ) : (
+              <View style={[styles.olderDot, isFirstEver && { backgroundColor: palette.iceDeep }]} />
+            );
+            return (
+              <TimelineRow
+                key={entry.id}
+                dot={dot}
+                first={!repeating && i === 0}
+                last={isFirstEver}
+              >
+                <View style={[styles.card, styles.entryCard]} testID={`history-entry-${i}`}>
+                  <View style={styles.shrink}>
+                    <Text style={styles.entryDate}>{display(entry.date)}</Text>
+                    <Text style={type.secondary}>{entryCaption(isFirstEver ? null : gaps[i])}</Text>
+                    {entry.note ? <Text style={styles.note}>{entry.note}</Text> : null}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.pencil}
+                    onPress={() => navigation.navigate('EditEntry', { itemId: item.id, entryId: entry.id })}
+                    testID={`history-edit-${i}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit the ${display(entry.date)} entry`}
+                  >
+                    <MaterialCommunityIcons name="pencil-outline" size={20} color={palette.navy} />
+                  </TouchableOpacity>
+                </View>
+              </TimelineRow>
+            );
+          })}
+        </View>
+      </ScrollView>
+
+      {pickingPastDate && (
+        <DatePickerModal
+          value={todayString()}
+          onConfirm={handleAddPast}
+          onCancel={() => setPickingPastDate(false)}
+        />
       )}
-    </ScrollView>
+    </View>
   );
 }
 
+function Column({ heading, value, sub }: { heading: string; value: string; sub: string }) {
+  return (
+    <View style={styles.column}>
+      <Text style={styles.columnHeading}>{heading}</Text>
+      <Text style={styles.columnValue}>{value}</Text>
+      <Text style={type.secondary}>{sub}</Text>
+    </View>
+  );
+}
+
+/** A row on the timeline: the rail with its dot on the left, the content on the right. */
+function TimelineRow({
+  dot,
+  first,
+  last,
+  children,
+}: {
+  dot: React.ReactNode;
+  first?: boolean;
+  last?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.timelineRow}>
+      <View style={styles.rail}>
+        <View style={[styles.railLine, first && styles.railFromDot, last && styles.railToDot]} />
+        <View style={styles.dotSlot}>{dot}</View>
+      </View>
+      <View style={styles.timelineContent}>{children}</View>
+    </View>
+  );
+}
+
+const DOT_TOP = 22;
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colours.background },
-  content: { padding: 20, paddingBottom: 60 },
-  name: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: colours.textPrimary,
-    letterSpacing: -0.3,
+  screen: { flex: 1, backgroundColor: colours.background },
+  shrink: { flexShrink: 1 },
+  right: { textAlign: 'right' },
+
+  band: {
+    backgroundColor: palette.navy,
+    paddingHorizontal: space.screen + 4,
+    paddingBottom: 76,
+    borderBottomLeftRadius: radius.header,
+    borderBottomRightRadius: radius.header,
+  },
+  bandRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 8,
+    marginBottom: 16,
+  },
+  backLink: { minHeight: TAP, justifyContent: 'center', paddingRight: 12 },
+  backText: { fontFamily: fonts.semibold, fontSize: 16.5, color: palette.ringPale },
+  editPill: {
+    minHeight: TAP,
+    paddingHorizontal: 20,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center',
+  },
+  editPillText: { fontFamily: fonts.bold, fontSize: 15, color: '#FFFFFF' },
+  title: { ...type.screenTitle, color: '#FFFFFF', marginTop: 14 },
+  subtitle: { fontFamily: fonts.regular, fontSize: 15, color: palette.onNavyMuted, marginTop: 2 },
+
+  card: {
+    backgroundColor: palette.card,
+    borderRadius: radius.card,
+    padding: space.cardPadding,
+    ...cardShadow,
+  },
+  statusCard: { marginHorizontal: space.screen, marginTop: -44 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
+  columns: { flexDirection: 'row', marginTop: 16, gap: 12 },
+  column: { flex: 1 },
+  columnHeading: { fontFamily: fonts.semibold, fontSize: 12.5, color: palette.muted, marginBottom: 2 },
+  columnValue: { fontFamily: fonts.bold, fontSize: 17, color: palette.ink },
+
+  actions: { paddingHorizontal: space.screen, marginTop: 16 },
+  primaryBtn: {
+    minHeight: 54,
+    borderRadius: radius.button,
+    backgroundColor: palette.navy,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryBtnText: { ...type.button, color: '#FFFFFF' },
+  textBtn: { minHeight: TAP, justifyContent: 'center', alignItems: 'center', marginTop: 4 },
+  textBtnText: { fontFamily: fonts.regular, fontSize: 14.5, color: palette.muted, textAlign: 'center' },
+  link: { fontFamily: fonts.bold, color: palette.navy },
+
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: space.screen + 4,
+    marginTop: 24,
     marginBottom: 8,
   },
-  metaRow: { flexDirection: 'row', gap: 12, marginBottom: 6 },
-  category: { fontSize: 13, color: colours.textSecondary },
-  avg: { fontSize: 13, color: colours.textMuted },
-  status: { fontSize: 14, color: colours.textMuted, marginBottom: 24 },
-  dot: { color: colours.border },
-  doneBtn: {
-    backgroundColor: colours.textPrimary,
-    paddingVertical: 14,
+
+  timeline: { paddingHorizontal: space.screen },
+  timelineRow: { flexDirection: 'row' },
+  rail: { width: 28, alignItems: 'center' },
+  railLine: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: palette.line },
+  railFromDot: { top: DOT_TOP },
+  railToDot: { bottom: undefined, height: DOT_TOP },
+  dotSlot: { height: 2 * DOT_TOP, justifyContent: 'center' },
+  timelineContent: { flex: 1, paddingLeft: 8, paddingBottom: space.cardGap },
+
+  dueDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2.5, backgroundColor: palette.ground },
+  latestDotHalo: {
+    width: 20,
+    height: 20,
     borderRadius: 10,
+    backgroundColor: palette.lineHalo,
     alignItems: 'center',
-    marginBottom: 32,
+    justifyContent: 'center',
   },
-  doneBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colours.textMuted,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    marginBottom: 14,
+  latestDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: palette.navy },
+  olderDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: palette.navy },
+
+  dueCard: {
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: palette.line,
+    borderRadius: radius.card,
+    padding: space.cardPadding,
   },
-  emptyHistory: {
-    fontSize: 14,
-    color: colours.textSecondary,
-    lineHeight: 20,
+  entryCard: { flexDirection: 'row', alignItems: 'center', gap: 12, justifyContent: 'space-between' },
+  entryDate: { fontFamily: fonts.bold, fontSize: 16.5, color: palette.ink },
+  note: { fontFamily: fonts.regular, fontSize: 14, color: palette.ink, marginTop: 4 },
+  pencil: {
+    width: TAP,
+    height: TAP,
+    borderRadius: TAP / 2,
+    backgroundColor: palette.iconBtnBg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  historyRow: { flexDirection: 'row', marginBottom: 18 },
-  historyBullet: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colours.border,
-    marginTop: 5,
-    marginRight: 12,
-  },
-  historyBody: { flex: 1 },
-  historyDate: { fontSize: 15, color: colours.textPrimary, marginBottom: 2 },
-  historyMeta: { fontSize: 13, color: colours.textMuted },
-  editLink: { marginLeft: 'auto' },
-  editLinkText: { fontSize: 13, fontWeight: '500', color: colours.textSecondary },
-  undoText: { fontSize: 13, fontWeight: '500', color: colours.textMuted },
 });

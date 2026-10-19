@@ -1,4 +1,4 @@
-# From the empty list: add one item named ${NAME} with no repeat.
+# From the empty list: add one once-off item named ${NAME}.
 appId: com.since.app
 ---
 - tapOn:
@@ -8,6 +8,8 @@ appId: com.since.app
 - inputText: ${NAME}
 # Not a keyboard test (Save with the keyboard open has its own flow)
 - hideKeyboard
+- tapOn:
+    id: "add-onceoff-option"
 - scrollUntilVisible:
     element:
       id: "add-save-button"
