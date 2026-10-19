@@ -24,8 +24,17 @@ import {
 import { enqueueUpsert, enqueueDelete } from '../sync/queue';
 import { syncInBackground } from '../sync/engine';
 import { withoutCompletion, copyForRestore } from './undo';
+import {
+  withHistory,
+  hasEntryOn,
+  addEntry,
+  updateEntry,
+  deleteEntry,
+  sortNewestFirst,
+} from './history';
 
 export { canUndoDone } from './undo';
+export { HistoryError, dateBounds, usualIntervalDays, gapsNewestFirst } from './history';
 
 type ItemsListener = () => void;
 const listeners = new Set<ItemsListener>();
@@ -48,6 +57,24 @@ function generateId(): string {
   return randomUUID();
 }
 
+/** Save one changed item, reschedule its notifications and record it for sync. */
+async function persist(items: SinceItem[], updated: SinceItem): Promise<DerivedItem> {
+  await saveItems(items.map((i) => (i.id === updated.id ? updated : i)));
+  await scheduleItemNotifications(updated);
+
+  await enqueueUpsert(updated.id);
+  syncInBackground();
+
+  return deriveItem(updated);
+}
+
+async function loadOne(itemId: string): Promise<{ items: SinceItem[]; existing: SinceItem }> {
+  const items = await loadItems();
+  const existing = items.find((i) => i.id === itemId);
+  if (!existing) throw new Error(`Item not found: ${itemId}`);
+  return { items, existing };
+}
+
 /** Load all items, sorted for display, with derived fields attached. */
 export async function getDerivedItems(): Promise<DerivedItem[]> {
   const items = await loadItems();
@@ -64,12 +91,12 @@ export async function getDerivedItemById(itemId: string): Promise<DerivedItem | 
 /**
  * Create a new item, persist it, and schedule its notifications.
  *
- * Every item is seeded with an initial completion event so the log starts
+ * Every item is seeded with an initial history entry, so the log starts
  * from the date the user says it was last done.
  */
 export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
   const now = new Date().toISOString();
-  const history: CompletionEvent[] = [{ id: generateId(), date: input.lastDoneDate }];
+  const history: CompletionEvent[] = [{ id: generateId(), date: input.lastDoneDate, createdAt: now }];
   const item: SinceItem = {
     id: generateId(),
     name: input.name,
@@ -91,58 +118,79 @@ export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
   return deriveItem(item);
 }
 
-/** Update fields on an existing item, persist, and reschedule its notifications. */
+/**
+ * Update fields on an existing item, persist, and reschedule its
+ * notifications. Switching between Repeats and Once off keeps the history.
+ *
+ * A changed lastDoneDate edits the newest history entry (within the same
+ * bounds as editing it on the item screen), since lastDoneDate always comes
+ * from the history. Throws HistoryError when the date isn't allowed.
+ */
 export async function updateItem(itemId: string, updates: UpdateItemInput): Promise<DerivedItem> {
-  const items = await loadItems();
-  const existing = items.find((i) => i.id === itemId);
-  if (!existing) throw new Error(`Item not found: ${itemId}`);
+  const { items, existing } = await loadOne(itemId);
+  const now = new Date().toISOString();
+  const { lastDoneDate, ...fields } = updates;
 
-  const updated: SinceItem = {
+  let updated: SinceItem = {
     ...existing,
-    ...updates,
+    ...fields,
     id: existing.id,
-    // History is append-only and owned by markItemDone — metadata edits
-    // must never rewrite the completion log.
     history: existing.history,
     createdAt: existing.createdAt,
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
   };
+  if (lastDoneDate !== undefined && lastDoneDate !== existing.lastDoneDate) {
+    const newest = sortNewestFirst(existing.history)[0];
+    updated = updateEntry(updated, newest.id, { date: lastDoneDate }, todayString(), now);
+  }
 
-  await saveItems(items.map((i) => (i.id === itemId ? updated : i)));
-  await scheduleItemNotifications(updated);
-
-  await enqueueUpsert(updated.id);
-  syncInBackground();
-
-  return deriveItem(updated);
+  return persist(items, updated);
 }
 
 /**
- * Mark an item as done today (or on a specific date).
- *
- * Prepends a completion event. This is the only path that grows the history
- * log.
+ * Mark an item as done today (or on a specific date): adds a history entry.
+ * Doing it twice on the same day changes nothing, and entryId is then null
+ * (there's nothing to undo).
  */
-export async function markItemDone(itemId: string, doneDate?: string): Promise<DerivedItem> {
+export async function markItemDone(
+  itemId: string,
+  doneDate?: string,
+): Promise<{ item: DerivedItem; entryId: string | null }> {
   const date = doneDate ?? todayString();
-  const items = await loadItems();
-  const existing = items.find((i) => i.id === itemId);
-  if (!existing) throw new Error(`Item not found: ${itemId}`);
+  const { items, existing } = await loadOne(itemId);
+  if (hasEntryOn(existing, date)) return { item: deriveItem(existing), entryId: null };
 
-  const updated: SinceItem = {
-    ...existing,
-    lastDoneDate: date,
-    history: [{ id: generateId(), date }, ...existing.history],
-    updatedAt: new Date().toISOString(),
-  };
+  const entryId = generateId();
+  const updated = addEntry(existing, { id: entryId, date }, todayString(), new Date().toISOString());
+  return { item: await persist(items, updated), entryId };
+}
 
-  await saveItems(items.map((i) => (i.id === itemId ? updated : i)));
-  await scheduleItemNotifications(updated);
+/** Add a past entry ("Did it on another day?"). Throws HistoryError for a future date. */
+export async function addHistoryEntry(itemId: string, date: string, note?: string): Promise<DerivedItem> {
+  const { items, existing } = await loadOne(itemId);
+  const updated = addEntry(existing, { id: generateId(), date, note }, todayString(), new Date().toISOString());
+  return persist(items, updated);
+}
 
-  await enqueueUpsert(updated.id);
-  syncInBackground();
+/**
+ * Change an entry's date and/or note. The date must stay between the entries
+ * either side (today for the newest). Throws HistoryError otherwise.
+ */
+export async function updateHistoryEntry(
+  itemId: string,
+  entryId: string,
+  changes: { date?: string; note?: string },
+): Promise<DerivedItem> {
+  const { items, existing } = await loadOne(itemId);
+  const updated = updateEntry(existing, entryId, changes, todayString(), new Date().toISOString());
+  return persist(items, updated);
+}
 
-  return deriveItem(updated);
+/** Delete an entry. The last one can't go (HistoryError 'last-entry'). */
+export async function deleteHistoryEntry(itemId: string, entryId: string): Promise<DerivedItem> {
+  const { items, existing } = await loadOne(itemId);
+  const updated = deleteEntry(existing, entryId, new Date().toISOString());
+  return persist(items, updated);
 }
 
 /**
@@ -158,8 +206,10 @@ export async function undoMarkDone(
   const existing = items.find((i) => i.id === itemId);
   if (!existing) throw new Error(`Item not found: ${itemId}`);
 
-  const updated = withoutCompletion(existing, eventId, new Date().toISOString(), previousLastDoneDate);
-  if (!updated) return deriveItem(existing);
+  const now = new Date().toISOString();
+  const undone = withoutCompletion(existing, eventId, now, previousLastDoneDate);
+  if (!undone) return deriveItem(existing);
+  const updated = withHistory(undone, undone.history, now);
 
   await saveItems(items.map((i) => (i.id === itemId ? updated : i)));
   await scheduleItemNotifications(updated);

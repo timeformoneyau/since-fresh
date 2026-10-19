@@ -84,6 +84,12 @@ type LegacyItem = SinceItem & { expiryDate?: string | null; source?: string };
  *     still has an expiryDate was a scanned food item; it becomes a
  *     tracked-only item (no repeat interval, history seeded if empty) rather
  *     than being dropped.
+ *   - lastDoneDate with no matching history entry (earlier builds' Edit
+ *     screen changed the date without touching history) gets an entry, so
+ *     deriving lastDoneDate from history never moves it. Nothing is removed
+ *     and lastDoneDate is never rewritten; the added entry's id is fixed, so
+ *     running this again changes nothing.
+ *   - Entries may carry note and createdAt (redesign); they pass through.
  */
 function hydrate(stored: SinceItem): SinceItem {
   const { expiryDate, source: _source, ...item } = stored as LegacyItem;
@@ -98,7 +104,15 @@ function hydrate(stored: SinceItem): SinceItem {
       repeatUnit: null,
     };
   }
-  return { ...item, history };
+  return { ...item, history: withLastDoneEntry(item, history) };
+}
+
+function withLastDoneEntry(item: SinceItem, history: CompletionEvent[]): CompletionEvent[] {
+  if (history.some((e) => e.date === item.lastDoneDate)) return history;
+  const entry: CompletionEvent = { id: `${item.id}_last_${item.lastDoneDate}`, date: item.lastDoneDate };
+  // Newest first: it goes before the first entry older than it
+  const at = history.findIndex((e) => e.date < item.lastDoneDate);
+  return at === -1 ? [...history, entry] : [...history.slice(0, at), entry, ...history.slice(at)];
 }
 
 export function toEnvelope(items: SinceItem[]): string {

@@ -67,14 +67,18 @@ export default function DetailScreen() {
   async function handleMarkDone() {
     if (!item) return;
     const previousLastDoneDate = item.lastDoneDate;
-    const updated = await markItemDone(item.id);
+    const { entryId } = await markItemDone(item.id);
     refresh();
+    if (!entryId) {
+      showToast({ message: 'Already marked as done today' });
+      return;
+    }
     showToast({
       message: 'Marked as done',
       actionLabel: 'Undo',
       onAction: async () => {
         try {
-          await undoMarkDone(itemId, updated.history[0].id, previousLastDoneDate);
+          await undoMarkDone(itemId, entryId, previousLastDoneDate);
           refresh();
         } catch {
           showToast({ message: "Couldn't undo. Please try again." });

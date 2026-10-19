@@ -65,14 +65,18 @@ export default function MainListScreen() {
 
   async function handleMarkDone(item: SinceItem) {
     const previousLastDoneDate = item.lastDoneDate;
-    const updated = await markItemDone(item.id);
+    const { entryId } = await markItemDone(item.id);
     refresh();
+    if (!entryId) {
+      showToast({ message: `${item.name} is already marked as done today` });
+      return;
+    }
     showToast({
       message: `${item.name} marked as done`,
       actionLabel: 'Undo',
       onAction: async () => {
         try {
-          await undoMarkDone(item.id, updated.history[0].id, previousLastDoneDate);
+          await undoMarkDone(item.id, entryId, previousLastDoneDate);
         } catch {
           showToast({ message: "Couldn't undo. Please try again." });
         }

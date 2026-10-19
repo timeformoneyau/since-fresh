@@ -13,7 +13,13 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, RepeatUnit } from '../types';
-import { getDerivedItemById, updateItem, deleteItem, restoreDeletedItem } from '../domain/items/service';
+import {
+  getDerivedItemById,
+  updateItem,
+  deleteItem,
+  restoreDeletedItem,
+  HistoryError,
+} from '../domain/items/service';
 import { formatDisplay, parseDate, todayString } from '../utils/dateUtils';
 import { colours, fonts } from '../theme/tokens';
 import DatePickerModal from '../components/DatePickerModal';
@@ -66,13 +72,22 @@ export default function EditItemScreen() {
     const rv = repeatValue ? parseInt(repeatValue, 10) : null;
     const hasRepeat = rv !== null && rv > 0;
 
-    await updateItem(itemId, {
-      name: trimmed,
-      category,
-      lastDoneDate,
-      repeatValue: hasRepeat ? rv : null,
-      repeatUnit: hasRepeat ? repeatUnit : null,
-    });
+    try {
+      await updateItem(itemId, {
+        name: trimmed,
+        category,
+        lastDoneDate,
+        repeatValue: hasRepeat ? rv : null,
+        repeatUnit: hasRepeat ? repeatUnit : null,
+      });
+    } catch (e) {
+      // The date edits the newest history entry, which can't move before the one under it
+      if (e instanceof HistoryError) {
+        showToast({ message: e.message });
+        return;
+      }
+      throw e;
+    }
 
     navigation.goBack();
   }
