@@ -33,7 +33,7 @@ it('adds an item with a name only (no repeat) and shows it on the list', async (
   render(<App />);
   await addItem('empty', 'Haircut');
   expect(screen.getByText('Haircut')).toBeTruthy();
-  expect(screen.getAllByText('Tracked only').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Once off').length).toBeGreaterThan(0);
 });
 
 it('adds an item with a repeat cycle', async () => {
@@ -47,8 +47,8 @@ it('marks an item done from the list', async () => {
     name: 'Car service',
     category: 'Auto',
     lastDoneDate: '2026-01-01',
-    repeatValue: null,
-    repeatUnit: null,
+    repeatValue: 1,
+    repeatUnit: 'years',
   });
   render(<App />);
   fireEvent.press(await screen.findByTestId('item-Car service-done'));
@@ -99,7 +99,7 @@ it('deletes an item from the Edit screen, then Undo brings it back', async () =>
 });
 
 it('marks done from the list, then Undo puts the previous date back', async () => {
-  await createItem({ name: 'Gym bag', category: 'Health', lastDoneDate: '2026-01-01', repeatValue: null, repeatUnit: null });
+  await createItem({ name: 'Gym bag', category: 'Health', lastDoneDate: '2026-01-01', repeatValue: 1, repeatUnit: 'years' });
   render(<App />);
   fireEvent.press(await screen.findByTestId('item-Gym bag-done'));
   await waitFor(() => expect(screen.getByTestId('item-Gym bag')).toHaveTextContent(/Done today/));
@@ -146,7 +146,7 @@ it('Add: the repeat is clearly optional, and leaving it blank saves a tracked-on
 
   fireEvent.changeText(screen.getByTestId('add-name-input'), 'Hair dye');
   fireEvent.press(screen.getByTestId('add-save-button'));
-  expect(await screen.findByTestId('item-Hair dye')).toHaveTextContent(/Tracked only/);
+  expect(await screen.findByTestId('item-Hair dye')).toHaveTextContent(/Once off/);
 });
 
 it('Add: tapping Save with no name shows the hint, typing a name clears it', async () => {
@@ -178,4 +178,36 @@ it('Finance is offered as a category', async () => {
   await openAdd('empty');
   fireEvent.press(screen.getByText('Other')); // the category row shows the current one
   expect(await screen.findByText('Finance')).toBeTruthy();
+});
+
+it('List card: a repeating item has a status chip, a progress bar and a Done pill', async () => {
+  await createItem({ name: 'Bins', category: 'Household', lastDoneDate: '2020-01-01', repeatValue: 1, repeatUnit: 'weeks' });
+  render(<App />);
+  const card = await screen.findByTestId('item-Bins');
+  expect(card).toHaveTextContent(/Long overdue/);
+  expect(card).toHaveTextContent(/Overdue by \d+ days/);
+  expect(screen.getByTestId('item-Bins-done')).toBeTruthy();
+  expect(screen.getByTestId('item-Bins-bar')).toBeTruthy();
+});
+
+it('List card: a once-off item shows "Once off", no Done pill and no bar', async () => {
+  await createItem({ name: 'Passport photo', category: 'Admin', lastDoneDate: '2026-01-01', repeatValue: null, repeatUnit: null });
+  render(<App />);
+  const card = await screen.findByTestId('item-Passport photo');
+  expect(card).toHaveTextContent(/Once off/);
+  expect(card).toHaveTextContent(/Kept as a record/);
+  expect(screen.queryByTestId('item-Passport photo-done')).toBeNull();
+  expect(screen.queryByTestId('item-Passport photo-bar')).toBeNull();
+});
+
+it('Summary card counts what could use a look, and drops the line when all is good', async () => {
+  await createItem({ name: 'Gutters', category: 'Household', lastDoneDate: '2020-01-01', repeatValue: 1, repeatUnit: 'years' });
+  await createItem({ name: 'Boiler', category: 'Household', lastDoneDate: '2020-01-01', repeatValue: 1, repeatUnit: 'years' });
+  render(<App />);
+  expect(await screen.findByTestId('summary-card')).toHaveTextContent(/2 could use a look/);
+
+  fireEvent.press(screen.getByTestId('item-Gutters-done'));
+  fireEvent.press(await screen.findByTestId('item-Boiler-done'));
+  await waitFor(() => expect(screen.getByTestId('summary-card')).not.toHaveTextContent(/could use a look/));
+  expect(screen.getByTestId('summary-card')).toHaveTextContent(/All good/);
 });

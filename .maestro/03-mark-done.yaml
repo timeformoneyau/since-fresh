@@ -16,6 +16,7 @@ name: Mark an item done
     id: "date-picker-done"
 # Not a keyboard test (Save with the keyboard open has its own flow)
 - hideKeyboard
+- runFlow: subflows/set-repeat-yearly.yaml
 - scrollUntilVisible:
     element:
       id: "add-save-button"

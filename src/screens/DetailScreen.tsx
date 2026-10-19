@@ -125,7 +125,7 @@ export default function DetailScreen() {
           <Text>{secondaryLine(item.status)}</Text>
         </Text>
       ) : (
-        <Text style={styles.status}>Tracked only</Text>
+        <Text style={styles.status}>Once off</Text>
       )}
 
       <TouchableOpacity

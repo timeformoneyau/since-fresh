@@ -7,5 +7,5 @@ name: Add an item with a name only (no repeat)
     env:
       NAME: Haircut
 - assertVisible: "Haircut"
-- assertVisible: "Tracked only"
+- assertVisible: "Once off"
 - takeScreenshot: 01-add-no-repeat

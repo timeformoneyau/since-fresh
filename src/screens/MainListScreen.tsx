@@ -2,15 +2,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
-  SectionList,
+  FlatList,
   TouchableOpacity,
   StyleSheet,
   StatusBar,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SinceItem, RootStackParamList, DEFAULT_CATEGORIES } from '../types';
+import { SinceItem, RootStackParamList } from '../types';
 import { DerivedItem } from '../domain/items/types';
 import {
   getDerivedItems,
@@ -20,52 +21,16 @@ import {
   restoreDeletedItem,
   onItemsChanged,
 } from '../domain/items/service';
-import { sortItems, computeItemStatus, statusSortOrder } from '../utils/statusUtils';
+import { sortItems } from '../utils/statusUtils';
 import { isCloudSyncConfigured } from '../lib/supabase';
 import { syncNow } from '../domain/sync/engine';
 import ItemCard from '../components/ItemCard';
 import { useToast } from '../components/Toast';
 import SystemStatus from '../components/SystemStatus';
-import { colours, fonts } from '../theme/tokens';
+import LogoMark from '../components/LogoMark';
+import { colours, palette, fonts, type, radius, space, TAP } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
-type Section = { title: string; data: DerivedItem[] };
-
-/**
- * Group items into per-category sections.
- *
- * Category grouping nests urgency sorting rather than replacing it:
- *   - items within a section keep the existing sortItems() urgency order
- *   - sections are ordered by the urgency of their most-urgent item, so the
- *     category that needs attention floats to the top
- *   - DEFAULT_CATEGORIES order breaks ties between equally-urgent sections
- */
-function buildSections(items: DerivedItem[]): Section[] {
-  const map = new Map<string, DerivedItem[]>();
-  for (const item of items) {
-    const cat = item.category || 'Other';
-    if (!map.has(cat)) map.set(cat, []);
-    map.get(cat)!.push(item);
-  }
-
-  const sections: Array<Section & { urgency: number; catOrder: number }> = [];
-  for (const [title, data] of map.entries()) {
-    const sorted = sortItems(data) as DerivedItem[];
-    const urgency = statusSortOrder(computeItemStatus(sorted[0]).label);
-    const catOrder = (DEFAULT_CATEGORIES as readonly string[]).indexOf(title);
-    sections.push({
-      title,
-      data: sorted,
-      urgency,
-      catOrder: catOrder === -1 ? DEFAULT_CATEGORIES.length : catOrder,
-    });
-  }
-
-  sections.sort((a, b) => a.urgency - b.urgency || a.catOrder - b.catOrder);
-
-  return sections.map(({ title, data }) => ({ title, data }));
-}
-
 const QUICK_START = [
   { name: 'Dentist', category: 'Health' },
   { name: 'Tyre rotation', category: 'Auto' },
@@ -140,26 +105,58 @@ export default function MainListScreen() {
     navigation.navigate('Detail', { itemId: item.id });
   }
 
+  const header = (
+    <View style={[styles.header, { paddingTop: insets.top }]}>
+      <View style={[styles.headerRow, styles.headerRowTop]}>
+        <View style={styles.brand}>
+          <LogoMark size={38} />
+          <Text style={styles.wordmark}>Since</Text>
+        </View>
+        <View style={styles.headerActions}>
+          {isCloudSyncConfigured() && (
+            <TouchableOpacity
+              style={styles.accountBtn}
+              testID="main-account-button"
+              onPress={() => navigation.navigate('Account')}
+              accessibilityLabel="Account"
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="account-outline" size={24} color={palette.ringPale} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.addBtn}
+            testID="main-add-button"
+            onPress={() => navigation.navigate('Add')}
+            accessibilityLabel="Add something"
+            accessibilityRole="button"
+          >
+            <MaterialCommunityIcons name="plus" size={26} color={palette.ink} />
+          </TouchableOpacity>
+        </View>
+      </View>
+      <Text style={styles.tagline}>Know how long it's been.</Text>
+    </View>
+  );
+
   if (items.length === 0) {
     return (
-      <View style={[styles.safe, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="dark-content" backgroundColor={colours.background} />
+      <View style={styles.safe}>
+        <StatusBar barStyle="light-content" backgroundColor={palette.navy} />
+        {header}
         <View style={styles.emptyContainer}>
-          <Text style={styles.appTitle}>Since</Text>
-          <Text style={styles.appTagline}>Know how long it's been</Text>
           <Text style={styles.appSupport}>
             Track the things you don't do often enough and we'll keep count for you.
           </Text>
 
-          <View style={styles.ctaRow}>
-            <TouchableOpacity
-              style={styles.primaryCTA}
-              testID="empty-add-button"
-              onPress={() => navigation.navigate('Add')}
-            >
-              <Text style={styles.primaryCTAText}>Add something</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.primaryCTA}
+            testID="empty-add-button"
+            onPress={() => navigation.navigate('Add')}
+            accessibilityRole="button"
+          >
+            <Text style={styles.primaryCTAText}>Add something</Text>
+          </TouchableOpacity>
 
           <Text style={styles.quickStartLabel}>Quick start</Text>
           <View style={styles.quickStartRow}>
@@ -168,6 +165,7 @@ export default function MainListScreen() {
                 key={q.name}
                 style={styles.chip}
                 onPress={() => navigation.navigate('Add')}
+                accessibilityRole="button"
               >
                 <Text style={styles.chipText}>{q.name}</Text>
               </TouchableOpacity>
@@ -179,43 +177,19 @@ export default function MainListScreen() {
   }
 
   return (
-    <View style={[styles.safe, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor={colours.background} />
-
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Since</Text>
-        <View style={styles.headerActions}>
-          {isCloudSyncConfigured() && (
-            <TouchableOpacity
-              style={styles.accountBtn}
-              testID="main-account-button"
-              onPress={() => navigation.navigate('Account')}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityLabel="Account"
-              accessibilityRole="button"
-            >
-              <Text style={styles.accountBtnText}>Account</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.addBtn}
-            testID="main-add-button"
-            onPress={() => navigation.navigate('Add')}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityLabel="Add something"
-            accessibilityRole="button"
-          >
-            <Text style={styles.addBtnText}>＋</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <SystemStatus items={items} />
-
-      <SectionList<DerivedItem>
-        sections={buildSections(items)}
+    <View style={styles.safe}>
+      <StatusBar barStyle="light-content" backgroundColor={palette.navy} />
+      <FlatList<DerivedItem>
+        data={sortItems(items) as DerivedItem[]}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={
+          <>
+            {header}
+            <View style={styles.summaryOverlap}>
+              <SystemStatus items={items} />
+            </View>
+          </>
+        }
         renderItem={({ item }) => (
           <ItemCard
             item={item}
@@ -225,14 +199,8 @@ export default function MainListScreen() {
             onPress={handleOpenDetail}
           />
         )}
-        renderSectionHeader={({ section }) => (
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionHeaderText}>{section.title}</Text>
-          </View>
-        )}
         contentContainerStyle={[styles.list, { paddingBottom: 32 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
-        stickySectionHeadersEnabled={false}
       />
     </View>
   );
@@ -244,52 +212,95 @@ const styles = StyleSheet.create({
     backgroundColor: colours.background,
   },
 
+  // Header band
+  header: {
+    backgroundColor: palette.navy,
+    paddingHorizontal: space.screen + 4,
+    paddingBottom: 76,
+    borderBottomLeftRadius: radius.header,
+    borderBottomRightRadius: radius.header,
+  },
+  headerRowTop: {
+    paddingTop: 12,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  brand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  wordmark: {
+    ...type.wordmark,
+  },
+  tagline: {
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    color: palette.onNavyMuted,
+    marginTop: 6,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  addBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: palette.ice,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  accountBtn: {
+    width: TAP,
+    height: TAP,
+    borderRadius: TAP / 2,
+    borderWidth: 1.5,
+    borderColor: palette.ringPale,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  summaryOverlap: {
+    marginTop: -44,
+  },
+
+  list: {
+    paddingBottom: 32,
+  },
+
   // Empty state
   emptyContainer: {
     flex: 1,
-    paddingHorizontal: 32,
-    paddingTop: 80,
-  },
-  appTitle: {
-    fontSize: 42,
-    fontFamily: fonts.bold,
-    color: colours.textPrimary,
-    letterSpacing: -1,
-    marginBottom: 6,
-  },
-  appTagline: {
-    fontSize: 20,
-    fontFamily: fonts.regular,
-    color: colours.textPrimary,
-    marginBottom: 16,
+    paddingHorizontal: space.screen + 4,
+    paddingTop: 28,
   },
   appSupport: {
-    fontFamily: fonts.regular, fontSize: 15,
-    color: colours.textSecondary,
-    lineHeight: 22,
-    marginBottom: 40,
-  },
-  ctaRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 40,
+    ...type.body,
+    color: palette.muted,
+    lineHeight: 24,
+    marginBottom: 24,
   },
   primaryCTA: {
-    backgroundColor: colours.textPrimary,
-    paddingVertical: 14,
+    backgroundColor: palette.navy,
+    minHeight: 54,
     paddingHorizontal: 28,
-    borderRadius: 10,
+    borderRadius: radius.button,
     alignSelf: 'flex-start',
+    justifyContent: 'center',
+    marginBottom: 36,
   },
   primaryCTAText: {
-    color: '#fff',
-    fontSize: 15,
-    fontFamily: fonts.semibold,
+    ...type.button,
+    color: '#FFFFFF',
   },
   quickStartLabel: {
     fontSize: 12,
-    fontFamily: fonts.medium,
-    color: colours.textMuted,
+    fontFamily: fonts.semibold,
+    color: palette.muted,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
     marginBottom: 12,
@@ -301,80 +312,16 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: 1,
-    borderColor: colours.border,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    backgroundColor: colours.surface,
+    borderColor: palette.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: 16,
+    minHeight: TAP,
+    justifyContent: 'center',
+    backgroundColor: palette.card,
   },
   chipText: {
-    fontFamily: fonts.regular, fontSize: 13,
-    color: colours.textSecondary,
-  },
-
-  // List header
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontFamily: fonts.bold,
-    color: colours.textPrimary,
-    letterSpacing: -0.5,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  addBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colours.textPrimary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addBtnText: {
-    color: '#fff',
-    fontFamily: fonts.regular, fontSize: 20,
-    lineHeight: 22,
-    marginTop: -1,
-  },
-
-  list: {
-    paddingBottom: 32,
-  },
-  accountBtn: {
-    height: 36,
-    paddingHorizontal: 12,
-    borderRadius: 18,
-    backgroundColor: colours.surface,
-    borderWidth: 1,
-    borderColor: colours.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  accountBtnText: {
-    fontSize: 13,
-    color: colours.textSecondary,
-    fontFamily: fonts.medium,
-  },
-  sectionHeader: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 6,
-    backgroundColor: colours.background,
-  },
-  sectionHeaderText: {
-    fontSize: 11,
     fontFamily: fonts.semibold,
-    color: colours.textMuted,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
+    fontSize: 14,
+    color: palette.ink,
   },
 });
