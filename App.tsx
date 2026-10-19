@@ -74,8 +74,8 @@ function AppNavigator() {
   return (
     <AppStack.Navigator screenOptions={stackOptions}>
       <AppStack.Screen name="Main" component={MainListScreen} options={{ headerShown: false }} />
-      <AppStack.Screen name="Add" component={AddItemScreen} options={{ title: 'Track something' }} />
-      <AppStack.Screen name="Edit" component={EditItemScreen} options={{ title: 'Edit' }} />
+      <AppStack.Screen name="Add" component={AddItemScreen} options={{ title: '' }} />
+      <AppStack.Screen name="Edit" component={EditItemScreen} options={{ title: '' }} />
       <AppStack.Screen name="Detail" component={DetailScreen} options={{ headerShown: false }} />
       <AppStack.Screen name="EditEntry" component={EditHistoryEntryScreen} options={{ title: '' }} />
       <AppStack.Screen name="Account" component={AccountScreen} options={{ title: 'Account' }} />

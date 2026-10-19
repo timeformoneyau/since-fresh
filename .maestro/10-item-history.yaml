@@ -15,7 +15,7 @@ name: Item screen, Done today, then add a note to the newest entry
     id: "date-year-${new Date().getFullYear() - 1}"
 - tapOn:
     id: "date-picker-done"
-- runFlow: subflows/set-repeat-yearly.yaml
+# "Car service" starts at its usual gap, every 12 months
 - scrollUntilVisible:
     element:
       id: "add-save-button"
@@ -32,7 +32,7 @@ name: Item screen, Done today, then add a note to the newest entry
     visible:
       id: "detail-status-card"
     timeout: 10000
-- assertVisible: "Repeats every year"
+- assertVisible: "Repeats every 12 months"
 - tapOn:
     id: "detail-mark-done-button"
 - assertVisible: "2 entries"

@@ -15,7 +15,7 @@ name: Mark done, then Undo puts the previous date back
     id: "date-year-${new Date().getFullYear() - 1}"
 - tapOn:
     id: "date-picker-done"
-- runFlow: subflows/set-repeat-yearly.yaml
+# "Car service" starts at its usual gap, every 12 months
 - scrollUntilVisible:
     element:
       id: "add-save-button"

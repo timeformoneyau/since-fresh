@@ -4,7 +4,7 @@ import App from '../../../App';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 import { createItem, addHistoryEntry } from '../../domain/items/service';
-import { todayString as todayIso } from '../../utils/dateUtils';
+import { todayString as todayIso, formatDisplay } from '../../utils/dateUtils';
 
 // Each test renders the whole app in local-only mode (jest.ui.setup.js),
 // starting from an empty list.
@@ -21,17 +21,27 @@ async function openAdd(from: ListState) {
   return screen.findByTestId('add-name-input');
 }
 
-async function addItem(from: ListState, name: string, repeat?: { value: string; unit: string }) {
+/** Set the Add stepper (it starts at 30) to a value. */
+function stepTo(value: number) {
+  const current = () => Number(screen.getByTestId('add-repeat-value').props.children);
+  while (current() > value) fireEvent.press(screen.getByTestId('add-stepper-minus'));
+  while (current() < value) fireEvent.press(screen.getByTestId('add-stepper-plus'));
+}
+
+/** Add an item: once off, or repeating every `repeat`. */
+async function addItem(from: ListState, name: string, repeat?: { value: number; unit: string }) {
   fireEvent.changeText(await openAdd(from), name);
   if (repeat) {
-    fireEvent.changeText(screen.getByTestId('add-repeat-input'), repeat.value);
+    stepTo(repeat.value);
     fireEvent.press(screen.getByTestId(`add-unit-${repeat.unit}`));
+  } else {
+    fireEvent.press(screen.getByTestId('add-onceoff-option'));
   }
   fireEvent.press(screen.getByTestId('add-save-button'));
   return screen.findByTestId(`item-${name}`);
 }
 
-it('adds an item with a name only (no repeat) and shows it on the list', async () => {
+it('adds a once-off item and shows it on the list', async () => {
   render(<App />);
   await addItem('empty', 'Haircut');
   expect(screen.getByText('Haircut')).toBeTruthy();
@@ -40,7 +50,7 @@ it('adds an item with a name only (no repeat) and shows it on the list', async (
 
 it('adds an item with a repeat cycle', async () => {
   render(<App />);
-  await addItem('empty', 'Water plants', { value: '2', unit: 'weeks' });
+  await addItem('empty', 'Water plants', { value: 2, unit: 'weeks' });
   expect(await screen.findByText(/in 14 days/)).toBeTruthy();
 });
 
@@ -219,22 +229,76 @@ it('History screen has a visible way to Edit', async () => {
   expect(await screen.findByTestId('edit-name-input')).toBeTruthy();
 });
 
-it('Add: the repeat is clearly optional, and leaving it blank saves a tracked-only item', async () => {
+it('Add: asks Repeats or Once off, Repeats by default; Once off shows the note and saves a once-off item', async () => {
   render(<App />);
   await openAdd('empty');
-  expect(screen.getByText('Repeat every (optional)')).toBeTruthy();
-  expect(screen.getByPlaceholderText('No repeat')).toBeTruthy();
-  expect(screen.getByText(/Leave blank to just keep track/)).toBeTruthy();
+  expect(screen.getByText('Does it repeat?')).toBeTruthy();
+  expect(screen.getByTestId('add-repeats-option').props.accessibilityState).toEqual({ checked: true });
+  expect(screen.getByTestId('add-onceoff-option').props.accessibilityState).toEqual({ checked: false });
+  expect(screen.getByTestId('add-repeat-value')).toHaveTextContent('30');
+
+  fireEvent.press(screen.getByTestId('add-onceoff-option'));
+  expect(screen.getByTestId('add-onceoff-option').props.accessibilityState).toEqual({ checked: true });
+  expect(screen.getByTestId('add-onceoff-info')).toHaveTextContent(/stay in your list as a record, with no reminders/);
+  expect(screen.queryByTestId('add-stepper-plus')).toBeNull();
 
   fireEvent.changeText(screen.getByTestId('add-name-input'), 'Hair dye');
   fireEvent.press(screen.getByTestId('add-save-button'));
   expect(await screen.findByTestId('item-Hair dye')).toHaveTextContent(/Once off/);
 });
 
+it('Add: the stepper stays between 1 and 99, and Next due updates live', async () => {
+  render(<App />);
+  await openAdd('empty');
+  fireEvent.press(screen.getByTestId('add-yesterday'));
+  stepTo(1);
+  expect(screen.getByTestId('add-stepper-minus')).toBeDisabled();
+  fireEvent.press(screen.getByTestId('add-unit-days'));
+  // Done yesterday, every 1 day: next due today
+  expect(screen.getByTestId('add-next-due')).toHaveTextContent(`Next due ${formatDisplay(new Date())}`, { exact: false });
+
+  fireEvent.press(screen.getByTestId('add-today'));
+  fireEvent.press(screen.getByTestId('add-unit-weeks'));
+  const inAWeek = new Date();
+  inAWeek.setDate(inAWeek.getDate() + 7);
+  expect(screen.getByTestId('add-next-due')).toHaveTextContent(`Next due ${formatDisplay(inAWeek)}`, { exact: false });
+
+  stepTo(99);
+  expect(screen.getByTestId('add-stepper-plus')).toBeDisabled();
+  expect(screen.getByTestId('add-unit-weeks').props.accessibilityState).toEqual({ selected: true });
+});
+
+it('Add: a known name starts the stepper at its usual gap', async () => {
+  render(<App />);
+  fireEvent.changeText(await openAdd('empty'), 'Dentist');
+  expect(screen.getByTestId('add-repeat-value')).toHaveTextContent('6');
+  expect(screen.getByTestId('add-unit-months').props.accessibilityState).toEqual({ selected: true });
+  expect(screen.getByText(/usually come round every 6 months/)).toBeTruthy();
+});
+
+it('Edit: switching to Once off and back keeps the history', async () => {
+  const created = await createItem({ name: 'Boiler', category: 'Household', lastDoneDate: '2025-01-10', repeatValue: 1, repeatUnit: 'years' });
+  await addHistoryEntry(created.id, '2024-01-12');
+  render(<App />);
+
+  fireEvent.press(await screen.findByTestId('item-Boiler-edit'));
+  fireEvent.press(await screen.findByTestId('edit-onceoff-option'));
+  fireEvent.press(screen.getByTestId('edit-save-button'));
+  expect(await screen.findByTestId('item-Boiler')).toHaveTextContent(/Once off/);
+
+  fireEvent.press(screen.getByTestId('item-Boiler-edit'));
+  fireEvent.press(await screen.findByTestId('edit-repeats-option'));
+  fireEvent.press(screen.getByTestId('edit-save-button'));
+  await waitFor(() => expect(screen.getByTestId('item-Boiler')).not.toHaveTextContent(/Once off/));
+
+  fireEvent.press(screen.getByTestId('item-Boiler-history'));
+  expect(await screen.findByTestId('detail-history-summary')).toHaveTextContent('2 entries');
+});
+
 it('Add: tapping Save with no name shows the hint, typing a name clears it', async () => {
   render(<App />);
   await openAdd('empty');
-  expect(screen.getByText('Name')).toBeTruthy();
+  expect(screen.getByText('What is it?')).toBeTruthy();
   expect(screen.queryByTestId('add-save-hint')).toBeNull();
 
   fireEvent.press(screen.getByTestId('add-save-button'));
@@ -255,11 +319,16 @@ it('Edit: clearing the name and tapping Save shows the hint', async () => {
   expect(await screen.findByTestId('edit-save-hint')).toBeTruthy();
 });
 
-it('Finance is offered as a category', async () => {
+it('Category chips: Finance is offered, Food is not, and the chosen one is selected', async () => {
   render(<App />);
   await openAdd('empty');
-  fireEvent.press(screen.getByText('Other')); // the category row shows the current one
-  expect(await screen.findByText('Finance')).toBeTruthy();
+  for (const c of ['Household', 'Health', 'Auto', 'Family', 'Admin', 'Finance', 'Purchases', 'Other']) {
+    expect(screen.getByTestId(`add-category-${c}`)).toBeTruthy();
+  }
+  expect(screen.queryByTestId('add-category-Food')).toBeNull();
+  fireEvent.press(screen.getByTestId('add-category-Finance'));
+  expect(screen.getByTestId('add-category-Finance').props.accessibilityState).toEqual({ selected: true });
+  expect(screen.getByTestId('add-category-Other').props.accessibilityState).toEqual({ selected: false });
 });
 
 it('List card: a repeating item has a status chip, a progress bar and a Done pill', async () => {
