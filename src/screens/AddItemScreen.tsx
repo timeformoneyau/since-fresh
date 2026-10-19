@@ -16,7 +16,7 @@ import { RootStackParamList, RepeatUnit } from '../types';
 import { createItem } from '../domain/items/service';
 import { todayString, formatDisplay, parseDate } from '../utils/dateUtils';
 import { getSuggestion } from '../utils/suggestions';
-import { colours } from '../components/colours';
+import { colours, fonts } from '../theme/tokens';
 import DatePickerModal from '../components/DatePickerModal';
 import CategoryPicker from '../components/CategoryPicker';
 
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
   field: { marginBottom: 8 },
   nameInput: {
     fontSize: 24,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     color: colours.textPrimary,
     paddingVertical: 8,
     paddingHorizontal: 0,
@@ -237,12 +237,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F0D9B0',
   },
-  suggestionText: { fontSize: 13, color: '#7A5C2A' },
-  suggestionApply: { fontSize: 13, fontWeight: '600', color: '#C8842A' },
+  suggestionText: { fontFamily: fonts.regular, fontSize: 13, color: '#7A5C2A' },
+  suggestionApply: { fontSize: 13, fontFamily: fonts.semibold, color: '#C8842A' },
   fieldGroup: { marginBottom: 20 },
   label: {
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     color: colours.textMuted,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colours.border,
   },
-  rowButtonText: { fontSize: 15, color: colours.textPrimary },
+  rowButtonText: { fontFamily: fonts.regular, fontSize: 15, color: colours.textPrimary },
   repeatInput: {
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colours.border,
-    fontSize: 15,
+    fontFamily: fonts.regular, fontSize: 15,
     color: colours.textPrimary,
     marginBottom: 8,
   },
@@ -280,8 +280,8 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   unitBtnActive: { backgroundColor: colours.textPrimary, borderColor: colours.textPrimary },
-  unitBtnText: { fontSize: 13, color: colours.textSecondary },
-  unitBtnTextActive: { color: '#fff', fontWeight: '600' },
+  unitBtnText: { fontFamily: fonts.regular, fontSize: 13, color: colours.textSecondary },
+  unitBtnTextActive: { color: '#fff', fontFamily: fonts.semibold },
   saveBtn: {
     backgroundColor: colours.textPrimary,
     paddingVertical: 15,
@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   saveBtnDisabled: { opacity: 0.35 },
-  hint: { fontSize: 12, color: colours.textMuted, marginTop: 8 },
-  saveHint: { fontSize: 13, color: colours.textSecondary, textAlign: 'center', marginTop: 10 },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  hint: { fontFamily: fonts.regular, fontSize: 12, color: colours.textMuted, marginTop: 8 },
+  saveHint: { fontFamily: fonts.regular, fontSize: 13, color: colours.textSecondary, textAlign: 'center', marginTop: 10 },
+  saveBtnText: { color: '#fff', fontSize: 15, fontFamily: fonts.semibold },
 });

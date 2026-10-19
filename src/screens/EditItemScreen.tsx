@@ -15,7 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, RepeatUnit } from '../types';
 import { getDerivedItemById, updateItem, deleteItem, restoreDeletedItem } from '../domain/items/service';
 import { formatDisplay, parseDate, todayString } from '../utils/dateUtils';
-import { colours } from '../components/colours';
+import { colours, fonts } from '../theme/tokens';
 import DatePickerModal from '../components/DatePickerModal';
 import CategoryPicker from '../components/CategoryPicker';
 import { useToast } from '../components/Toast';
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
   fieldGroup: { marginBottom: 20 },
   label: {
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     color: colours.textMuted,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colours.border,
-    fontSize: 15,
+    fontFamily: fonts.regular, fontSize: 15,
     color: colours.textPrimary,
   },
   rowButton: {
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colours.border,
   },
-  rowButtonText: { fontSize: 15, color: colours.textPrimary },
+  rowButtonText: { fontFamily: fonts.regular, fontSize: 15, color: colours.textPrimary },
   repeatRow: { marginBottom: 8 },
   repeatInput: {
     paddingVertical: 12,
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colours.border,
-    fontSize: 15,
+    fontFamily: fonts.regular, fontSize: 15,
     color: colours.textPrimary,
     marginBottom: 6,
   },
@@ -285,8 +285,8 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   unitBtnActive: { backgroundColor: colours.textPrimary, borderColor: colours.textPrimary },
-  unitBtnText: { fontSize: 13, color: colours.textSecondary },
-  unitBtnTextActive: { color: '#fff', fontWeight: '600' },
+  unitBtnText: { fontFamily: fonts.regular, fontSize: 13, color: colours.textSecondary },
+  unitBtnTextActive: { color: '#fff', fontFamily: fonts.semibold },
   saveBtn: {
     backgroundColor: colours.textPrimary,
     paddingVertical: 15,
@@ -296,12 +296,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   saveBtnDisabled: { opacity: 0.35 },
-  hint: { fontSize: 12, color: colours.textMuted, marginTop: 8 },
-  saveHint: { fontSize: 13, color: colours.textSecondary, textAlign: 'center', marginTop: 10 },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  hint: { fontFamily: fonts.regular, fontSize: 12, color: colours.textMuted, marginTop: 8 },
+  saveHint: { fontFamily: fonts.regular, fontSize: 13, color: colours.textSecondary, textAlign: 'center', marginTop: 10 },
+  saveBtnText: { color: '#fff', fontSize: 15, fontFamily: fonts.semibold },
   deleteBtn: {
     paddingVertical: 14,
     alignItems: 'center',
   },
-  deleteBtnText: { fontSize: 14, color: colours.destructive },
+  deleteBtnText: { fontFamily: fonts.regular, fontSize: 14, color: colours.destructive },
 });

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { SinceItem } from '../types';
 import { computeItemStatus, secondaryLine } from '../utils/statusUtils';
-import { colours, statusColour } from './colours';
+import { colours, statusColour, fonts } from '../theme/tokens';
 
 interface Props {
   item: SinceItem;
@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
   actionText: {
     color: '#fff',
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
   },
   row: {
     flexDirection: 'row',
@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 16,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     color: colours.textPrimary,
     flex: 1,
     marginRight: 8,
@@ -213,17 +213,17 @@ const styles = StyleSheet.create({
   },
   doneBtnText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontFamily: fonts.medium,
     color: colours.textMuted,
     letterSpacing: 0.1,
   },
   sinceText: {
-    fontSize: 13,
+    fontFamily: fonts.regular, fontSize: 13,
     color: colours.textSecondary,
     marginBottom: 5,
   },
   statusText: {
-    fontSize: 12,
+    fontFamily: fonts.regular, fontSize: 12,
     color: colours.textMuted,
   },
   dot: {

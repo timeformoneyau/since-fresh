@@ -9,7 +9,7 @@ import {
   Pressable,
 } from 'react-native';
 import { DEFAULT_CATEGORIES } from '../types';
-import { colours } from './colours';
+import { colours, fonts } from '../theme/tokens';
 
 interface Props {
   value: string;
@@ -76,8 +76,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colours.border,
   },
-  toolbarCancel: { fontSize: 15, color: colours.textSecondary },
-  toolbarTitle: { fontSize: 15, fontWeight: '600', color: colours.textPrimary },
+  toolbarCancel: { fontFamily: fonts.regular, fontSize: 15, color: colours.textSecondary },
+  toolbarTitle: { fontSize: 15, fontFamily: fonts.semibold, color: colours.textPrimary },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -85,8 +85,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 20,
   },
-  rowText: { fontSize: 15, color: colours.textPrimary },
-  rowTextSelected: { fontWeight: '600' },
-  checkmark: { fontSize: 16, color: colours.textPrimary },
+  rowText: { fontFamily: fonts.regular, fontSize: 15, color: colours.textPrimary },
+  rowTextSelected: { fontFamily: fonts.semibold },
+  checkmark: { fontFamily: fonts.regular, fontSize: 16, color: colours.textPrimary },
   separator: { height: 1, backgroundColor: colours.border, marginHorizontal: 20 },
 });

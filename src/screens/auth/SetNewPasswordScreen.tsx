@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { completePasswordRecovery, abandonPasswordRecovery } from '../../domain/auth/service';
 import { friendlyAuthError, MIN_PASSWORD_LENGTH } from '../../domain/auth/errors';
-import { colours } from '../../components/colours';
+import { colours } from '../../theme/tokens';
 import { authStyles as s } from './authStyles';
 
 /**

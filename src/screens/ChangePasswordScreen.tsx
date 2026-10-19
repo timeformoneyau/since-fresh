@@ -16,7 +16,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { updatePassword } from '../domain/auth/service';
 import { friendlyAuthError, MIN_PASSWORD_LENGTH } from '../domain/auth/errors';
-import { colours } from '../components/colours';
+import { colours, fonts } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'ChangePassword'>;
 
@@ -110,7 +110,7 @@ const styles = StyleSheet.create({
   field: { gap: 6 },
   label: {
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     color: colours.textMuted,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
@@ -122,10 +122,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    fontSize: 15,
+    fontFamily: fonts.regular, fontSize: 15,
     color: colours.textPrimary,
   },
-  errorText: { fontSize: 13, color: colours.destructive },
+  errorText: { fontFamily: fonts.regular, fontSize: 13, color: colours.destructive },
   saveBtn: {
     backgroundColor: colours.textPrimary,
     paddingVertical: 15,
@@ -133,5 +133,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   btnDisabled: { opacity: 0.5 },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  saveBtnText: { color: '#fff', fontSize: 15, fontFamily: fonts.semibold },
 });

@@ -26,7 +26,7 @@ import { syncNow } from '../domain/sync/engine';
 import ItemCard from '../components/ItemCard';
 import { useToast } from '../components/Toast';
 import SystemStatus from '../components/SystemStatus';
-import { colours } from '../components/colours';
+import { colours, fonts } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 type Section = { title: string; data: DerivedItem[] };
@@ -252,19 +252,19 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     fontSize: 42,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     color: colours.textPrimary,
     letterSpacing: -1,
     marginBottom: 6,
   },
   appTagline: {
     fontSize: 20,
-    fontWeight: '400',
+    fontFamily: fonts.regular,
     color: colours.textPrimary,
     marginBottom: 16,
   },
   appSupport: {
-    fontSize: 15,
+    fontFamily: fonts.regular, fontSize: 15,
     color: colours.textSecondary,
     lineHeight: 22,
     marginBottom: 40,
@@ -284,11 +284,11 @@ const styles = StyleSheet.create({
   primaryCTAText: {
     color: '#fff',
     fontSize: 15,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
   },
   quickStartLabel: {
     fontSize: 12,
-    fontWeight: '500',
+    fontFamily: fonts.medium,
     color: colours.textMuted,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
     backgroundColor: colours.surface,
   },
   chipText: {
-    fontSize: 13,
+    fontFamily: fonts.regular, fontSize: 13,
     color: colours.textSecondary,
   },
 
@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 28,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     color: colours.textPrimary,
     letterSpacing: -0.5,
   },
@@ -341,7 +341,7 @@ const styles = StyleSheet.create({
   },
   addBtnText: {
     color: '#fff',
-    fontSize: 20,
+    fontFamily: fonts.regular, fontSize: 20,
     lineHeight: 22,
     marginTop: -1,
   },
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
   accountBtnText: {
     fontSize: 13,
     color: colours.textSecondary,
-    fontWeight: '500',
+    fontFamily: fonts.medium,
   },
   sectionHeader: {
     paddingHorizontal: 20,
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
   },
   sectionHeaderText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     color: colours.textMuted,
     letterSpacing: 0.6,
     textTransform: 'uppercase',

@@ -18,7 +18,7 @@ import {
 } from '../domain/items/service';
 import { secondaryLine } from '../utils/statusUtils';
 import { humaniseDaysSince, parseDate, formatDisplay, getDaysSince } from '../utils/dateUtils';
-import { colours, statusColour } from '../components/colours';
+import { colours, statusColour, fonts } from '../theme/tokens';
 import { useToast } from '../components/Toast';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Detail'>;
@@ -182,15 +182,15 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 60 },
   name: {
     fontSize: 26,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     color: colours.textPrimary,
     letterSpacing: -0.3,
     marginBottom: 8,
   },
   metaRow: { flexDirection: 'row', gap: 12, marginBottom: 6 },
-  category: { fontSize: 13, color: colours.textSecondary },
-  avg: { fontSize: 13, color: colours.textMuted },
-  status: { fontSize: 14, color: colours.textMuted, marginBottom: 24 },
+  category: { fontFamily: fonts.regular, fontSize: 13, color: colours.textSecondary },
+  avg: { fontFamily: fonts.regular, fontSize: 13, color: colours.textMuted },
+  status: { fontFamily: fonts.regular, fontSize: 14, color: colours.textMuted, marginBottom: 24 },
   dot: { color: colours.border },
   doneBtn: {
     backgroundColor: colours.textPrimary,
@@ -199,17 +199,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 32,
   },
-  doneBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  doneBtnText: { color: '#fff', fontSize: 15, fontFamily: fonts.semibold },
   sectionLabel: {
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     color: colours.textMuted,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     marginBottom: 14,
   },
   emptyHistory: {
-    fontSize: 14,
+    fontFamily: fonts.regular, fontSize: 14,
     color: colours.textSecondary,
     lineHeight: 20,
   },
@@ -223,9 +223,9 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   historyBody: { flex: 1 },
-  historyDate: { fontSize: 15, color: colours.textPrimary, marginBottom: 2 },
-  historyMeta: { fontSize: 13, color: colours.textMuted },
+  historyDate: { fontFamily: fonts.regular, fontSize: 15, color: colours.textPrimary, marginBottom: 2 },
+  historyMeta: { fontFamily: fonts.regular, fontSize: 13, color: colours.textMuted },
   editLink: { marginLeft: 'auto' },
-  editLinkText: { fontSize: 13, fontWeight: '500', color: colours.textSecondary },
-  undoText: { fontSize: 13, fontWeight: '500', color: colours.textMuted },
+  editLinkText: { fontSize: 13, fontFamily: fonts.medium, color: colours.textSecondary },
+  undoText: { fontSize: 13, fontFamily: fonts.medium, color: colours.textMuted },
 });

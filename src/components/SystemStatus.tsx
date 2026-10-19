@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, StyleSheet } from 'react-native';
 import { DerivedItem } from '../domain/items/types';
-import { colours } from './colours';
+import { colours, fonts } from '../theme/tokens';
 
 function deriveStatusText(items: DerivedItem[]): string {
   const labels = items.map((i) => i.status.label);
@@ -29,7 +29,7 @@ export default function SystemStatus({ items }: Props) {
 
 const styles = StyleSheet.create({
   text: {
-    fontSize: 13,
+    fontFamily: fonts.regular, fontSize: 13,
     color: colours.textMuted,
     paddingHorizontal: 20,
     paddingBottom: 10,

@@ -5,10 +5,16 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
+import * as SplashScreen from 'expo-splash-screen';
+import { useFonts } from 'expo-font';
+import { InstrumentSerif_400Regular } from '@expo-google-fonts/instrument-serif/400Regular';
+import { InstrumentSans_400Regular } from '@expo-google-fonts/instrument-sans/400Regular';
+import { InstrumentSans_500Medium } from '@expo-google-fonts/instrument-sans/500Medium';
+import { InstrumentSans_600SemiBold } from '@expo-google-fonts/instrument-sans/600SemiBold';
+import { InstrumentSans_700Bold } from '@expo-google-fonts/instrument-sans/700Bold';
 import type { Session } from '@supabase/supabase-js';
 import { getSupabase, isCloudSyncConfigured } from './src/lib/supabase';
 import { RootStackParamList, AuthStackParamList, RecoveryStackParamList } from './src/types';
-import { colours } from './src/components/colours';
 import { ToastProvider } from './src/components/Toast';
 import { requestNotificationPermissions, rescheduleAllNotifications } from './src/notifications/scheduler';
 import { loadItems } from './src/domain/items/storage';
@@ -34,6 +40,7 @@ import SignUpScreen from './src/screens/auth/SignUpScreen';
 import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
 import EnterCodeScreen from './src/screens/auth/EnterCodeScreen';
 import SetNewPasswordScreen from './src/screens/auth/SetNewPasswordScreen';
+import { colours, fonts } from './src/theme/tokens';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -45,6 +52,10 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Keep the splash screen up until the fonts are ready, so the first screen
+// never shows in the system font
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
 const AppStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const RecoveryStack = createNativeStackNavigator<RecoveryStackParamList>();
@@ -55,7 +66,7 @@ const stackOptions = {
   headerTintColor: colours.textPrimary,
   headerBackTitle: 'Back',
   contentStyle: { backgroundColor: colours.background },
-  headerTitleStyle: { fontWeight: '600' as const, fontSize: 17 },
+  headerTitleStyle: { fontFamily: fonts.semibold, fontSize: 17 },
 };
 
 function AppNavigator() {
@@ -105,6 +116,14 @@ function RecoveryNavigator() {
 }
 
 export default function App() {
+  const [fontsLoaded, fontError] = useFonts({
+    InstrumentSerif_400Regular,
+    InstrumentSans_400Regular,
+    InstrumentSans_500Medium,
+    InstrumentSans_600SemiBold,
+    InstrumentSans_700Bold,
+  });
+  const fontsReady = fontsLoaded || fontError !== null;
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(isCloudSyncConfigured());
   const [reconciling, setReconciling] = useState(false);
@@ -179,6 +198,14 @@ export default function App() {
       unsubscribeRecovery();
     };
   }, []);
+
+  useEffect(() => {
+    // A font that fails to load falls back to the system font rather than
+    // keeping the splash screen up
+    if (fontsReady) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsReady]);
+
+  if (!fontsReady) return null;
 
   if (loading || reconciling) {
     return (

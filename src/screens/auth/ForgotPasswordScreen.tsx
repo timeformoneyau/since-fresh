@@ -14,7 +14,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../types';
 import { sendPasswordReset } from '../../domain/auth/service';
 import { friendlyAuthError } from '../../domain/auth/errors';
-import { colours } from '../../components/colours';
+import { colours } from '../../theme/tokens';
 import { authStyles as s } from './authStyles';
 
 type Nav = NativeStackNavigationProp<AuthStackParamList, 'ForgotPassword'>;

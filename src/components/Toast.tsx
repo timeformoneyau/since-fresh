@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colours } from './colours';
+import { colours, fonts } from '../theme/tokens';
 
 const SHOW_MS = 5000;
 
@@ -93,6 +93,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 6,
   },
-  message: { color: '#fff', fontSize: 14, flex: 1, marginRight: 12 },
-  action: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  message: { color: '#fff', fontFamily: fonts.regular, fontSize: 14, flex: 1, marginRight: 12 },
+  action: { color: '#fff', fontSize: 14, fontFamily: fonts.semibold },
 });
