@@ -112,6 +112,13 @@ select _check((select array_agg(id) = array['s1'] from public.completion_events)
 
 update public.items set name = 'Bins (shared)' where id = 'o-shared';
 select _check((select name = 'Bins (shared)' from public.items where id = 'o-shared'), 'M can edit a shared item');
+-- The app updates another member's item in place (cloudStorage.ts): an
+-- upsert is checked against the insert rule even when the row exists, and
+-- only an item's owner may insert it.
+select _fails(format($$insert into public.items (id, user_id, name, category, last_done_date, history, created_at, updated_at, household_id)
+    values ('o-shared', %L, 'Upserted', 'Household', '2026-10-01', '[]', now(), now(), %L)
+    on conflict (user_id, id) do update set name = excluded.name$$, :o, current_setting('t.hid')),
+  '42501', 'an upsert of someone else''s shared item is refused, so the app updates it instead');
 update public.items set name = 'Nope' where id = 'o-personal';
 select _fails($$update public.items set household_id = null where id = 'o-shared'$$, '42501',
   'only the person who added an item can change who it''s for');
