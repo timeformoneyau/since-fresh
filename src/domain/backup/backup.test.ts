@@ -91,6 +91,13 @@ describe('restoring merges, never replaces', () => {
     assert.deepEqual({ ...plan.added[0], id: 'gone', updatedAt: backup[0].updatedAt }, backup[0]);
   });
 
+  test("a shared item from someone else's backup comes back as this account's own, just for me", () => {
+    const shared = item('theirs', [['e1', '2026-05-01']], { ownerId: 'user-sam', householdId: 'home' });
+    const [added] = planRestore([], [shared], newId, NOW).added;
+    assert.equal('ownerId' in added, false);
+    assert.equal('householdId' in added, false);
+  });
+
   test("an item already here gains only the entries it's missing; its fields stay", () => {
     const local = [item('gutters', [['e2', '2026-10-01']], { name: 'Clean gutters' })];
     const backup = [item('gutters', [['e1', '2026-05-01'], ['e2', '2026-10-01']], { name: 'Gutters' })];

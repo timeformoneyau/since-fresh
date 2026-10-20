@@ -206,6 +206,13 @@ go through `domain/items/service.ts`, the one place that keeps persistence and s
 
 - **Old proxy secret is in this repo's public git history.** No longer used by this app, but
   rotate it on `since-proxy` (which UseBy now uses) if that hasn't been done.
+- **Households** (`domain/household/`, migration 004). One household per account. Each item is
+  "Just me" (default) or shared with the household; shared items carry `ownerId` (their owner's
+  account, absent for this account's own) and `householdId`, and entries carry `createdBy` for
+  "Done by". Membership changes go through database functions and need a connection; before each
+  sync the engine re-reads the household and applies changes (leaving drops its items from the
+  phone, joining pulls everything). The phone mirrors the server's rules (`household/rules.ts`) so
+  it never queues a change the server would refuse. Reminders skip items a member muted.
 - **How sync resolves conflicts** (`domain/sync/runSync.ts`). History entries sync one by one
   (`completion_events`, migration 003), so two phones marking the same item done both keep their
   entries, and a deleted entry is soft deleted and goes everywhere. Item fields: a change still to

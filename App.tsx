@@ -28,6 +28,7 @@ import EditHistoryEntryScreen from './src/screens/EditHistoryEntryScreen';
 import AccountScreen from './src/screens/AccountScreen';
 import ChangeEmailScreen from './src/screens/ChangeEmailScreen';
 import SignInScreen from './src/screens/auth/SignInScreen';
+import HouseholdSetupScreen from './src/screens/HouseholdSetupScreen';
 import EnterCodeScreen from './src/screens/auth/EnterCodeScreen';
 import { colours, fonts } from './src/theme/tokens';
 
@@ -88,6 +89,11 @@ function AppNavigator() {
         options={{ title: isCloudSyncConfigured() ? 'Account' : 'Backup' }}
       />
       <AppStack.Screen name="SignIn" component={SignInScreen} options={{ title: 'Sign in' }} />
+      <AppStack.Screen
+        name="HouseholdSetup"
+        component={HouseholdSetupScreen}
+        options={({ route }) => ({ title: route.params.mode === 'join' ? 'Join' : 'Household' })}
+      />
       <AppStack.Screen
         name="ChangeEmail"
         component={ChangeEmailScreen}

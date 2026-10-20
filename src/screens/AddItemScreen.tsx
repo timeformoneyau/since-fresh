@@ -5,11 +5,13 @@ import { RootStackParamList } from '../types';
 import { createItem } from '../domain/items/service';
 import { todayString } from '../utils/dateUtils';
 import ItemForm from '../components/ItemForm';
+import { useHousehold } from '../components/useHousehold';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Add'>;
 
 export default function AddItemScreen() {
   const navigation = useNavigation<Nav>();
+  const { household } = useHousehold();
 
   return (
     <ItemForm
@@ -20,8 +22,9 @@ export default function AddItemScreen() {
       dateHelp="This becomes the first entry in its history. You can add or edit past entries later."
       suggestFromName
       autoFocusName
-      onSubmit={async (values) => {
-        await createItem(values);
+      householdName={household?.name}
+      onSubmit={async ({ shared, ...values }) => {
+        await createItem({ ...values, householdId: shared && household ? household.id : null });
         navigation.goBack();
       }}
     />

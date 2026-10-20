@@ -102,7 +102,10 @@ export function planRestore(
       mine.get(incoming.id) ??
       incoming.history.map((e) => byEntry.get(e.id)).find((i): i is SinceItem => i !== undefined);
     if (!existing) {
-      added.push({ ...incoming, id: newId(), updatedAt: now });
+      // Added as this account's own and just for me: the backup's owner and
+      // household may not be this account's (households)
+      const { ownerId: _owner, householdId: _household, ...own } = incoming;
+      added.push({ ...own, id: newId(), updatedAt: now });
       continue;
     }
     const known = new Set(existing.history.map((e) => e.id));

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, StatusBar, Switch } from 'react-native';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,7 +14,10 @@ import {
   usualIntervalDays,
   gapsNewestFirst,
   HistoryError,
+  refreshReminders,
 } from '../domain/items/service';
+import { useHousehold } from '../components/useHousehold';
+import { doneBy, isMuted, isShared, setRemindMe, householdErrorMessage } from '../domain/household/service';
 import {
   repeatText,
   daysAgoText,
@@ -54,7 +57,22 @@ export default function DetailScreen() {
   const { itemId } = route.params;
   const [item, setItem] = useState<DerivedItem | null>(null);
   const [pickingPastDate, setPickingPastDate] = useState(false);
+  const [changingRemind, setChangingRemind] = useState(false);
+  const household = useHousehold();
   const showToast = useToast();
+
+  async function handleRemindMe(remind: boolean) {
+    if (!item) return;
+    setChangingRemind(true);
+    try {
+      await setRemindMe(item, remind);
+      await refreshReminders();
+    } catch (e) {
+      showToast({ message: householdErrorMessage(e) });
+    } finally {
+      setChangingRemind(false);
+    }
+  }
 
   const refresh = useCallback(async () => {
     const derived = await getDerivedItemById(itemId);
@@ -181,6 +199,23 @@ export default function DetailScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Remind me about this (shared items: each member's own choice) */}
+        {isShared(item) && household.household && (
+          <View style={[styles.card, styles.remindRow]}>
+            <View style={styles.shrink}>
+              <Text style={styles.entryDate}>Remind me about this</Text>
+              <Text style={type.secondary}>Shared with {household.household.name}. This only changes your reminders.</Text>
+            </View>
+            <Switch
+              value={!isMuted(item, household)}
+              onValueChange={handleRemindMe}
+              disabled={changingRemind}
+              testID="detail-remind-me"
+              accessibilityLabel="Remind me about this"
+            />
+          </View>
+        )}
+
         {/* History */}
         <View style={styles.historyHeader}>
           <Text style={type.sectionHeading} accessibilityRole="header">History</Text>
@@ -220,6 +255,9 @@ export default function DetailScreen() {
                     <Text style={styles.entryDate}>{display(entry.date)}</Text>
                     <Text style={type.secondary}>{entryCaption(isFirstEver ? null : gaps[i])}</Text>
                     {entry.note ? <Text style={styles.note}>{entry.note}</Text> : null}
+                    {doneBy(item, entry, household) ? (
+                      <Text style={type.secondary} testID={`history-done-by-${i}`}>{doneBy(item, entry, household)}</Text>
+                    ) : null}
                   </View>
                   <TouchableOpacity
                     style={styles.pencil}
@@ -379,6 +417,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     padding: space.cardPadding,
   },
+  remindRow: { flexDirection: 'row', alignItems: 'center', gap: 12, justifyContent: 'space-between' },
   entryCard: { flexDirection: 'row', alignItems: 'center', gap: 12, justifyContent: 'space-between' },
   entryDate: { fontFamily: fonts.bold, fontSize: 16.5, color: palette.ink },
   note: { fontFamily: fonts.regular, fontSize: 14, color: palette.ink, marginTop: 4 },

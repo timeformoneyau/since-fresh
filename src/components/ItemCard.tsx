@@ -23,12 +23,14 @@ import {
 } from '../theme/tokens';
 import CategoryTile from './CategoryTile';
 import StatusChip from './StatusChip';
+import { isShared } from '../domain/household/rules';
 
 interface Props {
   item: SinceItem;
   onMarkDone: (item: SinceItem) => void;
   onEdit: (item: SinceItem) => void;
-  onDelete: (item: SinceItem) => void;
+  /** Absent when this person can't delete it (someone else's shared item). */
+  onDelete?: (item: SinceItem) => void;
   /** Opens the item screen. */
   onPress?: (item: SinceItem) => void;
 }
@@ -74,7 +76,7 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
   function handleDelete() {
     // No confirm dialog: the list offers Undo right after
     closeSwipe();
-    onDelete(item);
+    onDelete?.(item);
   }
 
   const progress = intervalProgress(status);
@@ -93,15 +95,17 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
         >
           <Text style={styles.actionText}>Edit</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.deleteBtn]}
-          onPress={handleDelete}
-          testID={`item-${item.name}-delete`}
-          accessibilityLabel={`Delete ${item.name}`}
-          accessibilityRole="button"
-        >
-          <Text style={styles.actionText}>Delete</Text>
-        </TouchableOpacity>
+        {onDelete && (
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.deleteBtn]}
+            onPress={handleDelete}
+            testID={`item-${item.name}-delete`}
+            accessibilityLabel={`Delete ${item.name}`}
+            accessibilityRole="button"
+          >
+            <Text style={styles.actionText}>Delete</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <Animated.View
@@ -121,7 +125,12 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
             <CategoryTile name={item.name} category={item.category} />
             <View style={styles.titleText}>
               <Text style={type.cardTitle}>{item.name}</Text>
-              <Text style={type.secondary}>{lastDoneText(daysSince)}</Text>
+              <View style={styles.metaRow}>
+                <Text style={type.secondary}>{lastDoneText(daysSince)}</Text>
+                {isShared(item) && (
+                  <Text style={styles.householdTag} testID={`item-${item.name}-household-tag`}>Household</Text>
+                )}
+              </View>
             </View>
           </TouchableOpacity>
           {!once && (
@@ -220,6 +229,17 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     fontSize: 14,
     color: palette.navy,
+  },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  householdTag: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    color: palette.navy,
+    backgroundColor: palette.infoBg,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    overflow: 'hidden',
   },
   statusRow: {
     flexDirection: 'row',
