@@ -166,3 +166,37 @@ describe('history (redesign)', () => {
     assert.equal(typeof item.lastDoneDate, 'string');
   });
 });
+
+describe('optional sign-in', () => {
+  // Signing in is now optional, so a list can be built up with no account and
+  // adopted by the first sign-in (sync/ownership.ts). The stored list must
+  // load whole either way: old ids and new UUIDs alike, nothing dropped.
+  test('a list saved with no account loads whole and unchanged, ready to adopt', () => {
+    const items = [
+      {
+        ...base,
+        id: 'lq3x9a0k2m',
+        name: 'Gutters',
+        category: 'Household',
+        lastDoneDate: '2026-05-01',
+        history: [{ id: 'e1', date: '2026-05-01' }],
+        repeatValue: 6,
+        repeatUnit: 'months',
+      },
+      {
+        ...base,
+        id: '6f1c2b0e-8a5d-4c1e-9b7a-2d3e4f5a6b7c',
+        name: 'Haircut',
+        category: 'Other',
+        lastDoneDate: '2026-10-01',
+        history: [
+          { id: '0c9d8e7f-1a2b-4c3d-8e9f-0a1b2c3d4e5f', date: '2026-10-01', createdAt: '2026-10-01T09:00:00.000Z' },
+        ],
+        repeatValue: null,
+        repeatUnit: null,
+      },
+    ];
+    const raw = JSON.stringify({ version: STORAGE_VERSION, items });
+    assert.deepEqual(parseAndMigrate(raw), items);
+  });
+});

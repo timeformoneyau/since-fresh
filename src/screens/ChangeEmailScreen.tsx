@@ -13,7 +13,7 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { getUser, requestEmailChange } from '../domain/auth/service';
+import { getSignedInUser, requestEmailChange } from '../domain/auth/service';
 import { friendlyAuthError } from '../domain/auth/errors';
 import { colours, fonts } from '../theme/tokens';
 
@@ -33,7 +33,7 @@ export default function ChangeEmailScreen() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    getUser().then((u) => setCurrentEmail(u?.email ?? '')).catch(() => {});
+    getSignedInUser().then((u) => setCurrentEmail(u?.email ?? '')).catch(() => {});
   }, []);
 
   async function handleSend() {

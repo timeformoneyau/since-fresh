@@ -11,7 +11,8 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { getUser, signOut, deleteAccount } from '../domain/auth/service';
+import { getSignedInUser, signOut, deleteAccount } from '../domain/auth/service';
+import { takeSignInNotice } from '../domain/auth/sessionNotice';
 import { syncNow, SyncOutcome } from '../domain/sync/engine';
 import { hasPending } from '../domain/sync/queue';
 import { loadLastSyncedAt } from '../domain/sync/lastSynced';
@@ -21,9 +22,12 @@ import { colours, fonts } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Account'>;
 
+/** Signed in: backup status and account actions. Signed out: an invitation to back up. */
 export default function AccountScreen() {
   const navigation = useNavigation<Nav>();
-  const [email, setEmail] = useState('');
+  // undefined while loading, null when signed out
+  const [user, setUser] = useState<{ email: string } | null | undefined>(undefined);
+  const [notice, setNotice] = useState('');
   const [pending, setPending] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState('');
@@ -31,25 +35,33 @@ export default function AccountScreen() {
   const [deleting, setDeleting] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
-  // On focus, so a confirmed email change shows on returning here.
-  useFocusEffect(
-    useCallback(() => {
-      getUser().then((u) => setEmail(u?.email ?? '')).catch(() => {});
-      hasPending().then(setPending).catch(() => {});
-      loadLastSyncedAt().then(setLastSyncedAt).catch(() => {});
-    }, []),
-  );
+  const load = useCallback(() => {
+    getSignedInUser()
+      .then((u) => {
+        setUser(u);
+        if (!u) setNotice((n) => takeSignInNotice() ?? n);
+      })
+      .catch(() => setUser(null));
+    hasPending().then(setPending).catch(() => {});
+    loadLastSyncedAt().then(setLastSyncedAt).catch(() => {});
+  }, []);
+
+  // On focus, so a sign-in or a confirmed email change shows on returning here.
+  useFocusEffect(load);
 
   async function handleSyncNow() {
     setSyncing(true);
     setSyncNote('');
     const outcome: SyncOutcome = await syncNow();
-    // On 'signed-out' the app is already moving to Sign in, which explains.
-    if (outcome === 'signed-out') return;
+    setSyncing(false);
+    if (outcome === 'signed-out') {
+      // The session ended; show the signed-out view, which explains.
+      load();
+      return;
+    }
     setPending(await hasPending().catch(() => false));
     setLastSyncedAt(await loadLastSyncedAt().catch(() => null));
     setSyncNote(describeSyncOutcome(outcome));
-    setSyncing(false);
   }
 
   async function handleSignOut() {
@@ -74,6 +86,9 @@ export default function AccountScreen() {
           onPress: async () => {
             try {
               await signOut();
+              setSyncNote('');
+              setLastSyncedAt(null);
+              setUser(null);
             } catch (e) {
               Alert.alert("Couldn't sign out", friendlyAuthError(e));
             }
@@ -104,9 +119,9 @@ export default function AccountScreen() {
                   onPress: async () => {
                     setDeleting(true);
                     try {
-                      // On success the session ends and the app leaves this
-                      // screen, so deleting is not reset.
                       await deleteAccount();
+                      setDeleting(false);
+                      setUser(null);
                     } catch (e) {
                       // Nothing was deleted or wiped (auth/service.ts).
                       setDeleting(false);
@@ -122,11 +137,41 @@ export default function AccountScreen() {
     );
   }
 
+  if (user === undefined) {
+    return (
+      <View style={[styles.container, styles.centred]}>
+        <ActivityIndicator color={colours.textMuted} />
+      </View>
+    );
+  }
+
+  if (user === null) {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <View style={styles.section}>
+          <Text style={styles.label}>Back up and sync</Text>
+          {notice !== '' && <Text style={styles.body}>{notice}</Text>}
+          <Text style={styles.body}>
+            Your list is saved on this phone. Sign in to back it up and keep it on another phone too.
+          </Text>
+          <TouchableOpacity
+            style={styles.rowButton}
+            testID="account-sign-in-button"
+            onPress={() => navigation.navigate('SignIn')}
+            accessibilityRole="button"
+          >
+            <Text style={styles.rowButtonText}>Sign in or create an account</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.section}>
         <Text style={styles.label}>Signed in as</Text>
-        <Text style={styles.email}>{email || '—'}</Text>
+        <Text style={styles.email} testID="account-email">{user.email || '—'}</Text>
       </View>
 
       <View style={styles.section}>
@@ -159,13 +204,7 @@ export default function AccountScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.rowButton}
-          onPress={() => navigation.navigate('ChangePassword')}
-          accessibilityRole="button"
-        >
-          <Text style={styles.rowButtonText}>Change password</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.rowButton}
+          testID="account-sign-out-button"
           onPress={handleSignOut}
           disabled={preparingSignOut}
           accessibilityRole="button"
@@ -192,6 +231,7 @@ export default function AccountScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colours.background },
+  centred: { justifyContent: 'center', alignItems: 'center' },
   content: { padding: 20, paddingBottom: 60 },
   section: { marginBottom: 28 },
   label: {
@@ -203,7 +243,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   email: { fontSize: 16, color: colours.textPrimary, fontFamily: fonts.medium },
-  body: { fontFamily: fonts.regular, fontSize: 14, color: colours.textSecondary, marginBottom: 10 },
+  body: { fontFamily: fonts.regular, fontSize: 14, color: colours.textSecondary, marginBottom: 10, lineHeight: 20 },
   note: { fontFamily: fonts.regular, fontSize: 13, color: colours.textSecondary, marginTop: 8, lineHeight: 18 },
   rowButton: {
     paddingVertical: 13,

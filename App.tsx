@@ -1,6 +1,6 @@
 import 'react-native-url-polyfill/auto';
 import React, { useEffect, useRef, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Alert } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -12,18 +12,12 @@ import { InstrumentSans_400Regular } from '@expo-google-fonts/instrument-sans/40
 import { InstrumentSans_500Medium } from '@expo-google-fonts/instrument-sans/500Medium';
 import { InstrumentSans_600SemiBold } from '@expo-google-fonts/instrument-sans/600SemiBold';
 import { InstrumentSans_700Bold } from '@expo-google-fonts/instrument-sans/700Bold';
-import type { Session } from '@supabase/supabase-js';
 import { getSupabase, isCloudSyncConfigured } from './src/lib/supabase';
-import { RootStackParamList, AuthStackParamList, RecoveryStackParamList } from './src/types';
+import { RootStackParamList } from './src/types';
 import { ToastProvider } from './src/components/Toast';
 import { requestNotificationPermissions, rescheduleAllNotifications } from './src/notifications/scheduler';
 import { loadItems } from './src/domain/items/storage';
 import { reconcileDeviceOwnership, syncInBackground } from './src/domain/sync/engine';
-import {
-  loadRecoveryPending,
-  onRecoveryPendingChange,
-  applyRecoveryEvent,
-} from './src/domain/auth/recovery';
 
 // App screens
 import MainListScreen from './src/screens/MainListScreen';
@@ -32,15 +26,9 @@ import EditItemScreen from './src/screens/EditItemScreen';
 import DetailScreen from './src/screens/DetailScreen';
 import EditHistoryEntryScreen from './src/screens/EditHistoryEntryScreen';
 import AccountScreen from './src/screens/AccountScreen';
-import ChangePasswordScreen from './src/screens/ChangePasswordScreen';
 import ChangeEmailScreen from './src/screens/ChangeEmailScreen';
-
-// Auth screens
 import SignInScreen from './src/screens/auth/SignInScreen';
-import SignUpScreen from './src/screens/auth/SignUpScreen';
-import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
 import EnterCodeScreen from './src/screens/auth/EnterCodeScreen';
-import SetNewPasswordScreen from './src/screens/auth/SetNewPasswordScreen';
 import { colours, fonts } from './src/theme/tokens';
 
 Notifications.setNotificationHandler({
@@ -58,8 +46,6 @@ Notifications.setNotificationHandler({
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const AppStack = createNativeStackNavigator<RootStackParamList>();
-const AuthStack = createNativeStackNavigator<AuthStackParamList>();
-const RecoveryStack = createNativeStackNavigator<RecoveryStackParamList>();
 
 const stackOptions = {
   headerStyle: { backgroundColor: colours.background },
@@ -70,6 +56,24 @@ const stackOptions = {
   headerTitleStyle: { fontFamily: fonts.semibold, fontSize: 17 },
 };
 
+/**
+ * Asked before signing in removes a list that belongs to another account
+ * (sync/ownership.ts). Declining keeps the list and stays signed out.
+ */
+function confirmReplaceList(): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      'This phone has another account\'s list',
+      'Signing in removes that list from this phone and shows this account\'s list instead.',
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Remove and continue', style: 'destructive', onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+}
+
 function AppNavigator() {
   return (
     <AppStack.Navigator screenOptions={stackOptions}>
@@ -79,11 +83,7 @@ function AppNavigator() {
       <AppStack.Screen name="Detail" component={DetailScreen} options={{ headerShown: false }} />
       <AppStack.Screen name="EditEntry" component={EditHistoryEntryScreen} options={{ title: '' }} />
       <AppStack.Screen name="Account" component={AccountScreen} options={{ title: 'Account' }} />
-      <AppStack.Screen
-        name="ChangePassword"
-        component={ChangePasswordScreen}
-        options={{ title: 'Change password' }}
-      />
+      <AppStack.Screen name="SignIn" component={SignInScreen} options={{ title: 'Sign in' }} />
       <AppStack.Screen
         name="ChangeEmail"
         component={ChangeEmailScreen}
@@ -92,28 +92,11 @@ function AppNavigator() {
       <AppStack.Screen
         name="EnterCode"
         component={EnterCodeScreen}
-        options={{ title: 'Confirm email' }}
+        options={({ route }) => ({
+          title: route.params.purpose === 'sign_in' ? 'Sign in' : 'Confirm email',
+        })}
       />
     </AppStack.Navigator>
-  );
-}
-
-function AuthNavigator() {
-  return (
-    <AuthStack.Navigator screenOptions={{ ...stackOptions, headerShown: false }}>
-      <AuthStack.Screen name="SignIn" component={SignInScreen} />
-      <AuthStack.Screen name="SignUp" component={SignUpScreen} />
-      <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-      <AuthStack.Screen name="EnterCode" component={EnterCodeScreen} />
-    </AuthStack.Navigator>
-  );
-}
-
-function RecoveryNavigator() {
-  return (
-    <RecoveryStack.Navigator screenOptions={{ ...stackOptions, headerShown: false }}>
-      <RecoveryStack.Screen name="SetNewPassword" component={SetNewPasswordScreen} />
-    </RecoveryStack.Navigator>
   );
 }
 
@@ -126,10 +109,8 @@ export default function App() {
     InstrumentSans_700Bold,
   });
   const fontsReady = fontsLoaded || fontError !== null;
-  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(isCloudSyncConfigured());
   const [reconciling, setReconciling] = useState(false);
-  const [recoveryPending, setRecoveryPending] = useState(false);
   // The account the ownership rule last ran for. An email change verifies
   // with SIGNED_IN for the same account, which needs no reconcile.
   const reconciledUserId = useRef<string | null>(null);
@@ -140,20 +121,13 @@ export default function App() {
     (async () => {
       // With an existing session, apply the ownership rule before the list
       // is shown or reminders are scheduled, so another account's items are
-      // never displayed, rescheduled or uploaded.
+      // never displayed, rescheduled or uploaded without asking.
       if (supabase) {
         const { data: { session: s } } = await supabase.auth.getSession();
         if (s) {
-          await reconcileDeviceOwnership(s.user.id);
-          reconciledUserId.current = s.user.id;
-          // A restart mid-recovery still lands on "Set a new password".
-          setRecoveryPending(await loadRecoveryPending());
-        } else {
-          // A hold left by a recovery interrupted mid-verify has no session
-          // to hold; drop it so a later ordinary sign-in is not caught.
-          await applyRecoveryEvent('started-without-session');
+          const result = await reconcileDeviceOwnership(s.user.id, confirmReplaceList);
+          if (result !== 'cancelled') reconciledUserId.current = s.user.id;
         }
-        setSession(s);
         setLoading(false);
       }
 
@@ -165,16 +139,11 @@ export default function App() {
       syncInBackground();
     })();
 
-    if (!supabase) return; // Local-only build: no auth gate at all.
-
-    const unsubscribeRecovery = onRecoveryPendingChange(setRecoveryPending);
+    if (!supabase) return; // Local-only build: no accounts at all.
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
-      setSession(s);
       if (event === 'SIGNED_OUT') reconciledUserId.current = null;
-      // A recovery code signs in with PASSWORD_RECOVERY rather than SIGNED_IN;
-      // the ownership rule applies to both.
-      if ((event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') && s) {
+      if (event === 'SIGNED_IN' && s) {
         if (s.user.id === reconciledUserId.current) {
           // Same account (e.g. an email-change code): keep the screen as is.
           syncInBackground();
@@ -184,7 +153,10 @@ export default function App() {
         // Adopt, resume or replace the local list (ownership.ts), then sync.
         // Hold the list back until the local part is done.
         setReconciling(true);
-        reconcileDeviceOwnership(s.user.id)
+        reconcileDeviceOwnership(s.user.id, confirmReplaceList)
+          .then((result) => {
+            if (result === 'cancelled') reconciledUserId.current = null;
+          })
           .finally(() => {
             setReconciling(false);
             syncInBackground();
@@ -195,10 +167,7 @@ export default function App() {
       // out by sync/engine.ts) the ownership rule decides at the next sign-in.
     });
 
-    return () => {
-      subscription.unsubscribe();
-      unsubscribeRecovery();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -217,18 +186,13 @@ export default function App() {
     );
   }
 
-  // When cloud sync is not configured the app runs entirely local-first, with
-  // no sign-in step. Sync and auth are additive, never a prerequisite.
-  const showApp = !isCloudSyncConfigured() || session !== null;
-  // After a recovery code there is a session, but the user stays on "Set a
-  // new password" until it is saved (auth/recovery.ts).
-  const showRecovery = showApp && session !== null && recoveryPending;
-
+  // Signing in is optional: the list is always shown, and an account (when
+  // cloud sync is configured) only adds backup from the Account screen.
   return (
     <SafeAreaProvider>
       <ToastProvider>
         <NavigationContainer>
-          {showRecovery ? <RecoveryNavigator /> : showApp ? <AppNavigator /> : <AuthNavigator />}
+          <AppNavigator />
         </NavigationContainer>
       </ToastProvider>
     </SafeAreaProvider>
