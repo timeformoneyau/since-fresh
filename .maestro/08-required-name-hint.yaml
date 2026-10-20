@@ -12,6 +12,12 @@ name: Save with no name shows the required-field hint
       id: "add-save-button"
 - tapOn:
     id: "add-save-button"
+# The hint sits just below Save, so it can be off the bottom edge when Save
+# was scrolled only just into view. Bring it into view rather than assuming
+# it already is; this still fails if the hint never appears.
+- scrollUntilVisible:
+    element:
+      id: "add-save-hint"
 - assertVisible: "Add a name to save"
 - takeScreenshot: 08-required-name-hint
 # Typing a name clears the hint
