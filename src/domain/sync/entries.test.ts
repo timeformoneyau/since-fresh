@@ -29,6 +29,7 @@ import {
   withEntryUpsert,
   withEntryDelete,
   withoutPushed,
+  withoutItems,
   type SyncQueue,
 } from './queueOps.ts';
 import { classifySyncError } from './classify.ts';
@@ -439,5 +440,73 @@ describe('mergeItems with entries', () => {
     const pending = pendingFrom({ upserts: [], deletes: [], entryDeletes: [{ itemId: 'a', entryId: 'a-e1' }] });
     const [merged] = mergeItems([local], [], new Set(), [cloudEntry], pending);
     assert.deepEqual(entryIds(merged), ['a-e0']);
+  });
+});
+
+// ─── Households (sync plan, PR 6) ────────────────────────────────────────────
+
+describe('shared items', () => {
+  const SAM = 'user-sam';
+  const shared = { ...item('bins', ['2026-10-01']), ownerId: SAM, householdId: 'home' };
+
+  test("entries on someone else's shared item are sent under its owner's key", () => {
+    const push = entryPushFor(
+      {
+        upserts: [],
+        deletes: [],
+        entryUpserts: [{ itemId: 'bins', entryId: 'bins-e0' }],
+        entryDeletes: [{ itemId: 'bins', entryId: 'old' }],
+      },
+      [shared],
+    );
+    assert.equal(push.overwrite[0].ownerId, SAM);
+    assert.deepEqual(push.softDelete, [{ itemId: 'bins', entryId: 'old', ownerId: SAM }]);
+  });
+
+  test("this account's own entries carry no owner (the server uses the signed-in account)", () => {
+    const push = entryPushFor({ upserts: ['gutters'], deletes: [] }, [item('gutters')]);
+    assert.equal('ownerId' in push.insertOnly[0], false);
+  });
+
+  test("an entry pulled from the cloud keeps who did it", () => {
+    const entry: CloudEntry = {
+      itemId: 'bins', id: 'by-sam', date: '2026-10-05', note: null, createdAt: null,
+      deletedAt: null, serverUpdatedAt: NOW, createdBy: SAM,
+    };
+    const [merged] = mergeItems([shared], [], new Set(), [entry]);
+    assert.equal(merged.history.find((e) => e.id === 'by-sam')?.createdBy, SAM);
+  });
+
+  test("a shared item pulled from the cloud keeps its owner and household", () => {
+    const [merged] = mergeItems([], [{ ...shared, serverUpdatedAt: NOW }], new Set());
+    assert.equal(merged.ownerId, SAM);
+    assert.equal(merged.householdId, 'home');
+  });
+
+  test("an item handed to this account (its owner left) loses the old owner", () => {
+    const mineNow = { ...item('bins', ['2026-10-01']), householdId: 'home', serverUpdatedAt: NOW };
+    const [merged] = mergeItems([shared], [mineNow], new Set());
+    assert.equal('ownerId' in merged, false);
+  });
+});
+
+describe('the queue and households', () => {
+  test("a deleted shared item remembers whose it was until the delete is sent", () => {
+    let q = withDelete(EMPTY_QUEUE, 'bins', { ownerId: 'user-sam', householdId: 'home' });
+    q = withDelete(q, 'mine');
+    assert.deepEqual(q.deleteMeta, { bins: { ownerId: 'user-sam', householdId: 'home' } });
+    assert.deepEqual(readQueue(JSON.parse(JSON.stringify(q))).deleteMeta, q.deleteMeta);
+    const after = withoutPushed(q, { upserts: [], deletes: ['bins'], entryUpserts: [], entryDeletes: [] });
+    assert.equal(after.deleteMeta, undefined);
+    assert.deepEqual(after.deletes, ['mine']);
+  });
+
+  test('leaving a household forgets queued changes to its items, without deleting them', () => {
+    let q = withEntryUpsert(withUpsert(EMPTY_QUEUE, 'bins'), { itemId: 'bins', entryId: 'e' });
+    q = withUpsert(q, 'mine');
+    const after = withoutItems(q, ['bins']);
+    assert.deepEqual(after.upserts, ['mine']);
+    assert.deepEqual(after.entryUpserts, []);
+    assert.deepEqual(after.deletes, []);
   });
 });

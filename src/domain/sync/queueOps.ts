@@ -16,11 +16,19 @@ export interface EntryRef {
   entryId: string;
 }
 
+/** Whose a deleted item was, so its deletion is filed under the right account (households). */
+export interface DeleteMeta {
+  ownerId?: string;
+  householdId?: string | null;
+}
+
 export interface SyncQueue {
   /** Item ids created or modified locally and not yet pushed. */
   upserts: string[];
   /** Item ids deleted locally and not yet pushed. */
   deletes: string[];
+  /** For deletes of items that aren't this account's own, or are shared. */
+  deleteMeta?: Record<string, DeleteMeta>;
   /** History entries added or edited locally and not yet pushed. */
   entryUpserts: EntryRef[];
   /** History entries deleted locally and not yet pushed. */
@@ -39,9 +47,11 @@ const isId = (x: unknown): x is string => typeof x === 'string';
 export function readQueue(parsed: unknown): SyncQueue {
   const q = (parsed ?? {}) as Partial<Record<keyof SyncQueue, unknown>>;
   const list = <T,>(v: unknown, ok: (x: unknown) => x is T): T[] => (Array.isArray(v) ? v.filter(ok) : []);
+  const meta = q.deleteMeta && typeof q.deleteMeta === 'object' ? (q.deleteMeta as Record<string, DeleteMeta>) : undefined;
   return {
     upserts: list(q.upserts, isId),
     deletes: list(q.deletes, isId),
+    ...(meta && Object.keys(meta).length > 0 ? { deleteMeta: meta } : {}),
     entryUpserts: list(q.entryUpserts, isRef),
     entryDeletes: list(q.entryDeletes, isRef),
   };
@@ -56,10 +66,12 @@ export function withUpsert(q: SyncQueue, id: string): SyncQueue {
   };
 }
 
-export function withDelete(q: SyncQueue, id: string): SyncQueue {
+export function withDelete(q: SyncQueue, id: string, meta?: DeleteMeta): SyncQueue {
+  const deleteMeta = meta && (meta.ownerId || meta.householdId) ? { ...q.deleteMeta, [id]: meta } : q.deleteMeta;
   return {
     upserts: q.upserts.filter((u) => u !== id),
     deletes: q.deletes.includes(id) ? q.deletes : [...q.deletes, id],
+    ...(deleteMeta ? { deleteMeta } : {}),
     // The item's entries go with it.
     entryUpserts: q.entryUpserts.filter((r) => r.itemId !== id),
     entryDeletes: q.entryDeletes.filter((r) => r.itemId !== id),
@@ -90,11 +102,35 @@ export function withEntryDelete(q: SyncQueue, ref: EntryRef): SyncQueue {
 export function withoutPushed(q: SyncQueue, pushed: Partial<SyncQueue>): SyncQueue {
   const done = readQueue(pushed);
   const notIn = (refs: EntryRef[]) => (r: EntryRef) => !refs.some(sameRef(r));
+  const deletes = q.deletes.filter((id) => !done.deletes.includes(id));
   return {
     upserts: q.upserts.filter((id) => !done.upserts.includes(id)),
-    deletes: q.deletes.filter((id) => !done.deletes.includes(id)),
+    deletes,
+    ...keepMeta(q.deleteMeta, deletes),
     entryUpserts: q.entryUpserts.filter(notIn(done.entryUpserts)),
     entryDeletes: q.entryDeletes.filter(notIn(done.entryDeletes)),
+  };
+}
+
+function keepMeta(meta: SyncQueue['deleteMeta'], deletes: string[]): Pick<SyncQueue, 'deleteMeta'> {
+  if (!meta) return {};
+  const kept = Object.fromEntries(Object.entries(meta).filter(([id]) => deletes.includes(id)));
+  return Object.keys(kept).length > 0 ? { deleteMeta: kept } : {};
+}
+
+/**
+ * Forget every queued change to these items, without deleting them in the
+ * cloud: they're no longer this account's to change (it left the household).
+ */
+export function withoutItems(q: SyncQueue, ids: string[]): SyncQueue {
+  const gone = new Set(ids);
+  const deletes = q.deletes.filter((id) => !gone.has(id));
+  return {
+    upserts: q.upserts.filter((id) => !gone.has(id)),
+    deletes,
+    ...keepMeta(q.deleteMeta, deletes),
+    entryUpserts: q.entryUpserts.filter((r) => !gone.has(r.itemId)),
+    entryDeletes: q.entryDeletes.filter((r) => !gone.has(r.itemId)),
   };
 }
 

@@ -24,6 +24,8 @@ interface ItemRow {
   updated_at: string;
   /** Set by the database (migration 003); never sent. */
   server_updated_at?: string;
+  /** Migration 004: the household it's shared with, or null. */
+  household_id?: string | null;
 }
 
 interface EntryDbRow {
@@ -35,9 +37,15 @@ interface EntryDbRow {
   created_at?: string;
   deleted_at?: string | null;
   server_updated_at?: string;
+  created_by?: string | null;
 }
 
-function rowToItem(row: ItemRow): CloudItem {
+/**
+ * An item from the cloud. ownerId is set only for someone else's item (a
+ * household member's shared item); this account's items carry none, like
+ * items made on the phone.
+ */
+function rowToItem(row: ItemRow, me: string): CloudItem {
   return {
     id: row.id,
     name: row.name,
@@ -49,6 +57,8 @@ function rowToItem(row: ItemRow): CloudItem {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(row.server_updated_at ? { serverUpdatedAt: row.server_updated_at } : {}),
+    ...(row.user_id !== me ? { ownerId: row.user_id } : {}),
+    ...(row.household_id !== undefined ? { householdId: row.household_id } : {}),
   };
 }
 
@@ -61,12 +71,14 @@ function rowToEntry(row: EntryDbRow): CloudEntry {
     createdAt: row.created_at ?? null,
     deletedAt: row.deleted_at ?? null,
     serverUpdatedAt: row.server_updated_at ?? '',
+    createdBy: row.created_by ?? null,
   };
 }
 
+/** Entries are keyed by their item's owner, who may be another member. */
 function entryToRow(e: EntryRow, userId: string): EntryDbRow {
   return {
-    user_id: userId,
+    user_id: e.ownerId ?? userId,
     item_id: e.itemId,
     id: e.id,
     date: e.date,
@@ -103,10 +115,16 @@ async function allPages<T>(
   }
 }
 
+/**
+ * A shared item keeps its owner's key, whoever pushes it. household_id is
+ * only sent once an item has been shared or unshared, so builds talking to a
+ * project without migration 004 never send it.
+ */
 function itemToRow(item: SinceItem, userId: string): ItemRow {
   return {
     id: item.id,
-    user_id: userId,
+    user_id: item.ownerId ?? userId,
+    ...(item.householdId !== undefined ? { household_id: item.householdId } : {}),
     name: item.name,
     category: item.category,
     last_done_date: item.lastDoneDate,
@@ -135,7 +153,8 @@ export async function cloudLoadItems(since: string | null = null): Promise<Cloud
     if (from) q = q.gt('server_updated_at', from);
     return q.order('server_updated_at', { ascending: true }).order('id').range(a, b);
   });
-  return rows.map(rowToItem);
+  const me = await currentUserId();
+  return rows.map((r) => rowToItem(r, me));
 }
 
 /** History entries changed since `since`, or all of them; optionally only for some items. */
@@ -148,7 +167,7 @@ export async function cloudLoadEntries(
   const rows = await allPages<EntryDbRow>((a, b) => {
     let q = requireSupabase()
       .from('completion_events')
-      .select('item_id, id, date, note, created_at, deleted_at, server_updated_at');
+      .select('item_id, id, date, note, created_at, deleted_at, server_updated_at, created_by');
     if (from) q = q.gt('server_updated_at', from);
     if (itemIds) q = q.in('item_id', itemIds);
     return q.order('server_updated_at', { ascending: true }).order('item_id').order('id').range(a, b);
@@ -182,13 +201,19 @@ export async function cloudPushEntries(push: EntryPush): Promise<void> {
     if (error) throw error;
   }
 
-  const byItem = new Map<string, string[]>();
-  for (const r of softDelete) byItem.set(r.itemId, [...(byItem.get(r.itemId) ?? []), r.entryId]);
-  for (const [itemId, ids] of byItem) {
+  const byItem = new Map<string, { ownerId: string; itemId: string; ids: string[] }>();
+  for (const r of softDelete) {
+    const ownerId = r.ownerId ?? userId;
+    const key = `${ownerId}/${r.itemId}`;
+    const group = byItem.get(key) ?? { ownerId, itemId: r.itemId, ids: [] };
+    group.ids.push(r.entryId);
+    byItem.set(key, group);
+  }
+  for (const { ownerId, itemId, ids } of byItem.values()) {
     const { error } = await supabase
       .from('completion_events')
       .update({ deleted_at: new Date().toISOString() })
-      .eq('user_id', userId)
+      .eq('user_id', ownerId)
       .eq('item_id', itemId)
       .in('id', ids)
       .is('deleted_at', null);
@@ -196,39 +221,72 @@ export async function cloudPushEntries(push: EntryPush): Promise<void> {
   }
 }
 
+/**
+ * This account's items are upserted. Another member's shared item is
+ * updated in place: Postgres checks an upsert against the insert rule even
+ * when the row exists, and only an item's owner may insert it
+ * (004_households.sql), so an upsert would be refused.
+ */
 export async function cloudUpsertMany(items: SinceItem[]): Promise<void> {
   if (items.length === 0) return;
+  const supabase = requireSupabase();
   const userId = await currentUserId();
-  const rows = items.map((item) => itemToRow(item, userId));
-  // The key is (user_id, id): two accounts may hold the same item id.
-  const { error } = await requireSupabase()
-    .from('items')
-    .upsert(rows, { onConflict: 'user_id,id' });
-  if (error) throw error;
+  const mine = items.filter((i) => !i.ownerId || i.ownerId === userId);
+  const theirs = items.filter((i) => i.ownerId && i.ownerId !== userId);
+
+  if (mine.length > 0) {
+    // The key is (user_id, id): two accounts may hold the same item id.
+    const { error } = await supabase
+      .from('items')
+      .upsert(mine.map((item) => itemToRow(item, userId)), { onConflict: 'user_id,id' });
+    if (error) throw error;
+  }
+  for (const item of theirs) {
+    // An item no longer shared updates nothing; the next household check drops it
+    const { user_id: owner, id, created_at: _created, ...fields } = itemToRow(item, userId);
+    const { error } = await supabase.from('items').update(fields).eq('user_id', owner).eq('id', id);
+    if (error) throw error;
+  }
 }
 
 /**
  * Delete items and record tombstones, so the deletion survives a pull on
  * another device that still holds the item.
  */
-export async function cloudDeleteMany(ids: string[]): Promise<void> {
+export async function cloudDeleteMany(
+  ids: string[],
+  meta: Record<string, { ownerId?: string; householdId?: string | null }> = {},
+): Promise<void> {
   if (ids.length === 0) return;
   const supabase = requireSupabase();
   const userId = await currentUserId();
+  const ownerOf = (id: string) => meta[id]?.ownerId ?? userId;
 
+  // A shared item's tombstone carries its household, so every member sees it
   const { error: tombErr } = await supabase
     .from('deleted_items')
-    .upsert(ids.map((id) => ({ id, user_id: userId })), { onConflict: 'id,user_id' });
+    .upsert(
+      ids.map((id) => ({
+        id,
+        user_id: ownerOf(id),
+        ...(meta[id]?.householdId ? { household_id: meta[id].householdId } : {}),
+      })),
+      { onConflict: 'id,user_id' },
+    );
   if (tombErr) throw tombErr;
 
-  // Scoped to this account explicitly, not only through RLS: ids are unique
-  // per account, not globally.
-  const { error } = await supabase
-    .from('items')
-    .delete()
-    .eq('user_id', userId)
-    .in('id', ids);
-  if (error) throw error;
+  // Scoped to each item's owner explicitly, not only through RLS: ids are
+  // unique per account, not globally.
+  const byOwner = new Map<string, string[]>();
+  for (const id of ids) byOwner.set(ownerOf(id), [...(byOwner.get(ownerOf(id)) ?? []), id]);
+  for (const [owner, ownerIds] of byOwner) {
+    const { error } = await supabase
+      .from('items')
+      .delete()
+      .eq('user_id', owner)
+      .in('id', ownerIds);
+    if (error) throw error;
+  }
 }
 
 /** IDs deleted on any device. Applied locally so deletions propagate. */
