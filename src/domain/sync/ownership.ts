@@ -20,6 +20,9 @@
 
 export type SignInDecision = 'adopt' | 'resume' | 'replace';
 
+/** What applySignIn did: the decision, or 'cancelled' when a replace was declined. */
+export type SignInResult = SignInDecision | 'cancelled';
+
 export function decideOnSignIn(
   storedOwner: string | null,
   signedInUserId: string,
@@ -49,11 +52,18 @@ export interface OwnershipPorts {
  *   - replace: clear first, then record the owner. Interrupted before the
  *     owner is saved, the old owner is still recorded, so the next start
  *     replaces again rather than adopting the previous account's items.
+ *
+ * Signing in is optional, so a phone can hold a list from another account
+ * that its user still wants. Before a replace removes a non-empty list,
+ * confirmReplace is asked; if it says no, nothing changes and the result is
+ * 'cancelled' (the caller then signs out, keeping the list). Without
+ * confirmReplace, a replace goes ahead.
  */
 export async function applySignIn(
   ports: OwnershipPorts,
   signedInUserId: string,
-): Promise<SignInDecision> {
+  confirmReplace?: () => Promise<boolean>,
+): Promise<SignInResult> {
   const decision = decideOnSignIn(await ports.loadOwner(), signedInUserId);
 
   switch (decision) {
@@ -64,6 +74,9 @@ export async function applySignIn(
       await ports.saveOwner(signedInUserId);
       break;
     case 'replace':
+      if (confirmReplace && (await ports.loadItemIds()).length > 0 && !(await confirmReplace())) {
+        return 'cancelled';
+      }
       await ports.clearLocalData();
       await ports.saveOwner(signedInUserId);
       break;

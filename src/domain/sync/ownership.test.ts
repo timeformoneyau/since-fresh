@@ -158,6 +158,54 @@ describe('applySignIn', () => {
     assert.equal(p.state.local[0].name, "B's item");
   });
 
+  test('replace: asks first, and declining changes nothing on the phone', async () => {
+    const p = phone({ owner: 'user-a', local: [item('a-1')], signedIn: 'user-b' });
+    p.state.queue.upserts = ['a-1'];
+    let asked = 0;
+
+    const result = await applySignIn(p.ownership, 'user-b', async () => { asked++; return false; });
+
+    assert.equal(result, 'cancelled');
+    assert.equal(asked, 1);
+    assert.equal(p.state.owner, 'user-a', 'the list still belongs to A');
+    assert.deepEqual(ids(p.state.local), ['a-1']);
+    assert.deepEqual(p.state.queue.upserts, ['a-1']);
+    assert.equal(p.state.reminders, 1, "A's reminders are kept");
+    // Signed in as B with A's list still here, sync touches nothing.
+    assert.equal(await runSync(p.sync), 'skipped');
+    assert.deepEqual(p.state.pushed, []);
+  });
+
+  test('replace: agreeing clears the list and pulls the new account', async () => {
+    const p = phone({ owner: 'user-a', local: [item('a-1')], signedIn: 'user-b' });
+    p.state.cloud.set('user-b', [item('b-1')]);
+
+    assert.equal(await applySignIn(p.ownership, 'user-b', async () => true), 'replace');
+    assert.equal(p.state.owner, 'user-b');
+    assert.equal(await runSync(p.sync), 'synced');
+    assert.deepEqual(ids(p.state.local), ['b-1']);
+    assert.deepEqual(p.state.pushed, []);
+  });
+
+  test("replace: doesn't ask when the other account's list is already empty", async () => {
+    const p = phone({ owner: 'user-a', local: [], signedIn: 'user-b' });
+    let asked = 0;
+
+    assert.equal(await applySignIn(p.ownership, 'user-b', async () => { asked++; return false; }), 'replace');
+    assert.equal(asked, 0);
+    assert.equal(p.state.owner, 'user-b');
+  });
+
+  test('adopt and resume never ask', async () => {
+    let asked = 0;
+    const ask = async () => { asked++; return false; };
+    const fresh = phone({ owner: null, local: [item('1')], signedIn: 'user-a' });
+    assert.equal(await applySignIn(fresh.ownership, 'user-a', ask), 'adopt');
+    const same = phone({ owner: 'user-a', local: [item('1')], signedIn: 'user-a' });
+    assert.equal(await applySignIn(same.ownership, 'user-a', ask), 'resume');
+    assert.equal(asked, 0);
+  });
+
   test('replace: interrupted before the owner is saved, it replaces again', async () => {
     const p = phone({ owner: 'user-a', local: [item('a-1')], signedIn: 'user-b' });
     p.ownership.saveOwner = async () => { throw new Error('interrupted'); };

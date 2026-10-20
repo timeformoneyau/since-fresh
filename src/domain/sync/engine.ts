@@ -28,14 +28,14 @@ import {
   cancelAllReminders,
 } from '../../notifications/scheduler';
 import { runSync, SyncPorts, SyncOutcome } from './runSync';
-import { applySignIn, OwnershipPorts, SignInDecision } from './ownership';
+import { applySignIn, OwnershipPorts, SignInResult } from './ownership';
 import { classifySyncError } from './classify';
 import { saveLastSyncedAt, clearLastSyncedAt } from './lastSynced';
 import { SYNC_COPY } from './backupStatus';
 import { setSignInNotice } from '../auth/sessionNotice';
 
 export type { SyncOutcome } from './runSync';
-export type { SignInDecision } from './ownership';
+export type { SignInDecision, SignInResult } from './ownership';
 export { mergeItems } from './runSync';
 
 async function isAuthenticated(): Promise<boolean> {
@@ -141,23 +141,35 @@ const ownershipPorts: OwnershipPorts = {
   clearLocalData,
 };
 
-let reconciling: Promise<SignInDecision | null> | null = null;
+let reconciling: Promise<SignInResult | null> | null = null;
 
 /**
  * Apply the sign-in ownership rule (ownership.ts) for the signed-in account.
  * Local work only, and fast; the caller syncs afterwards. Run on SIGNED_IN
  * and at app start when a session already exists, before the list is shown.
  *
+ * confirmReplace is asked before another account's list is removed. When the
+ * user declines, the new session is ended on this phone only and the list is
+ * kept as it was ('cancelled').
+ *
  * Takes the user id rather than reading the session, so it is safe to call
  * from inside an onAuthStateChange callback.
  */
 export async function reconcileDeviceOwnership(
   signedInUserId: string,
-): Promise<SignInDecision | null> {
+  confirmReplace?: () => Promise<boolean>,
+): Promise<SignInResult | null> {
   if (!isCloudSyncConfigured()) return null;
   if (reconciling) return reconciling;
 
-  reconciling = applySignIn(ownershipPorts, signedInUserId).catch(() => null);
+  reconciling = applySignIn(ownershipPorts, signedInUserId, confirmReplace)
+    .then(async (result) => {
+      if (result === 'cancelled') {
+        await getSupabase()?.auth.signOut({ scope: 'local' }).catch(() => {});
+      }
+      return result;
+    })
+    .catch(() => null);
   try {
     return await reconciling;
   } finally {
