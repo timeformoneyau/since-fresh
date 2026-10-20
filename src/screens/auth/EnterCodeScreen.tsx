@@ -11,24 +11,23 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { AuthStackParamList, RootStackParamList } from '../../types';
-import { verifyCode, resendCode, CodePurpose } from '../../domain/auth/service';
+import { RootStackParamList } from '../../types';
+import { verifyCode, resendCode } from '../../domain/auth/service';
+import { codeSentCopy } from '../../domain/auth/codes';
 import { friendlyAuthError } from '../../domain/auth/errors';
 import { secondsUntilResend, isValidCodeFormat } from '../../domain/auth/cooldown';
 import { colours } from '../../theme/tokens';
 import { authStyles as s } from './authStyles';
 
-type AuthNav = NativeStackNavigationProp<AuthStackParamList, 'EnterCode'>;
-type AppNav = NativeStackNavigationProp<RootStackParamList, 'EnterCode'>;
-type Route = RouteProp<{ EnterCode: { email: string; purpose: CodePurpose } }, 'EnterCode'>;
+type Nav = NativeStackNavigationProp<RootStackParamList, 'EnterCode'>;
+type Route = RouteProp<RootStackParamList, 'EnterCode'>;
 
 /**
- * Shared by sign-up confirmation, password reset (D2: codes, not links) and,
- * inside the signed-in app, email change (F10). The previous screen has just
- * sent a code, so the resend cooldown starts now.
+ * Shared by sign-in (D2: codes, not links) and email change (F10). The
+ * previous screen has just sent a code, so the resend cooldown starts now.
  */
 export default function EnterCodeScreen() {
-  const navigation = useNavigation<AuthNav | AppNav>();
+  const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
   const { email, purpose } = useRoute<Route>().params;
@@ -59,13 +58,10 @@ export default function EnterCodeScreen() {
     setLoading(true);
     try {
       await verifyCode(email, code, purpose);
-      if (changingEmail) {
-        // Still signed in, now with the new address; Account shows it.
-        (navigation as AppNav).popTo('Account');
-        return;
-      }
-      // The auth listener in App.tsx takes over: the list for sign-up,
-      // "Set a new password" for recovery.
+      // Email change: still signed in, now with the new address; Account
+      // shows it. Sign-in: the auth listener in App.tsx sorts out the list
+      // (ownership.ts), then the list shows.
+      navigation.popTo(changingEmail ? 'Account' : 'Main');
     } catch (e) {
       setError(friendlyAuthError(e, changingEmail ? 'change-email' : undefined));
       setLoading(false);
@@ -98,21 +94,15 @@ export default function EnterCodeScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {!changingEmail && <Text style={s.appName}>Since</Text>}
         <Text style={s.heading}>Enter your code</Text>
-        <Text style={s.subheading}>
-          {purpose === 'recovery'
-            ? `If there's an account for ${email}, we've emailed it a code to reset the password.`
-            : changingEmail
-            ? `We've emailed a code to ${email}. Enter it to switch your account to this address.`
-            : `We've emailed a code to ${email}. Enter it to finish setting up your account.`}
-        </Text>
+        <Text style={s.subheading}>{codeSentCopy(purpose, email)}</Text>
 
         <View style={s.form}>
           <View style={s.field}>
             <Text style={s.label}>Code</Text>
             <TextInput
               style={[s.input, s.codeInput]}
+              testID="code-input"
               value={code}
               onChangeText={(t) => { setCode(t.replace(/\D/g, '').slice(0, 8)); setError(''); }}
               placeholder="123456"
@@ -133,6 +123,7 @@ export default function EnterCodeScreen() {
 
           <TouchableOpacity
             style={[s.primaryBtn, loading && s.btnDisabled]}
+            testID="code-continue-button"
             onPress={handleVerify}
             disabled={loading}
             accessibilityRole="button"
@@ -150,19 +141,7 @@ export default function EnterCodeScreen() {
               {wait > 0 ? `Send a new code in ${wait}s` : 'Send a new code'}
             </Text>
           </TouchableOpacity>
-
-          {!changingEmail && (
-            <Text style={s.noticeText}>If you already have an account, sign in instead.</Text>
-          )}
         </View>
-
-        {!changingEmail && (
-          <View style={s.footer}>
-            <TouchableOpacity onPress={() => (navigation as AuthNav).navigate('SignIn')}>
-              <Text style={s.footerLink}>Back to sign in</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );

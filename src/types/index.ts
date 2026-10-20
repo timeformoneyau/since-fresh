@@ -64,22 +64,9 @@ export type RootStackParamList = {
   Detail: { itemId: string };
   EditEntry: { itemId: string; entryId: string };
   Account: undefined;
-  ChangePassword: undefined;
-  ChangeEmail: undefined;
-  // Code sent to the new address; the screen is shared with the auth flow.
-  EnterCode: { email: string; purpose: 'email_change' };
-};
-
-// Auth flow navigation
-export type AuthStackParamList = {
+  // Signing in is optional and starts from Account (email, then a code).
   SignIn: undefined;
-  SignUp: undefined;
-  ForgotPassword: undefined;
-  EnterCode: { email: string; purpose: 'signup' | 'recovery' };
-};
-
-// Shown instead of the main app after a recovery code, until the new
-// password is saved (auth/recovery.ts)
-export type RecoveryStackParamList = {
-  SetNewPassword: undefined;
+  ChangeEmail: undefined;
+  // Shared by sign-in and email change (domain/auth/codes.ts).
+  EnterCode: { email: string; purpose: 'sign_in' | 'email_change' };
 };

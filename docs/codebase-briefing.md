@@ -105,9 +105,10 @@ This wording is central to the product's voice.
 
 ## 6. Screens & navigation (`App.tsx`)
 
-Two stacks. `AuthNavigator` (`SignIn`, `SignUp`, `ForgotPassword`) shows only when cloud sync is
-configured *and* nobody is signed in. Otherwise `AppNavigator`: `Main`, `Add`, `Edit`, `Detail`,
-`Account`, `ChangePassword`.
+One stack, `AppNavigator`: `Main`, `Add`, `Edit`, `Detail`, `EditEntry`, `Account`, `SignIn`,
+`EnterCode`, `ChangeEmail`. Signing in is optional: the list always opens first, and `Account`
+(shown when cloud sync is configured) offers "Back up and sync". Sign-in is by emailed code only,
+no passwords (`domain/auth/codes.ts`); the same code creates an account for a new address.
 
 - **Main** (`MainListScreen`) — items grouped into per-category `SectionList` sections. Grouping
   nests urgency sorting: sections are ordered by their most-urgent member, items stay

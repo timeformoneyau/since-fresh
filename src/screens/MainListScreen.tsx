@@ -65,7 +65,14 @@ export default function MainListScreen() {
 
   async function handleMarkDone(item: SinceItem) {
     const previousLastDoneDate = item.lastDoneDate;
-    const { entryId } = await markItemDone(item.id);
+    let entryId: string | null;
+    try {
+      ({ entryId } = await markItemDone(item.id));
+    } catch {
+      refresh();
+      showToast({ message: "Couldn't save that. Please try again." });
+      return;
+    }
     refresh();
     if (!entryId) {
       showToast({ message: `${item.name} is already marked as done today` });
@@ -85,7 +92,14 @@ export default function MainListScreen() {
   }
 
   async function handleDelete(item: SinceItem) {
-    const removed = await deleteItem(item.id);
+    let removed: SinceItem | null;
+    try {
+      removed = await deleteItem(item.id);
+    } catch {
+      refresh();
+      showToast({ message: "Couldn't delete that. Please try again." });
+      return;
+    }
     refresh();
     if (!removed) return;
     showToast({

@@ -1,37 +1,26 @@
 /**
  * Auth service — thin wrapper over Supabase auth.
  *
- * Ported from the `since` codebase. Every function requires cloud sync to be
- * configured; callers should gate on isCloudSyncConfigured() first. The app
- * remains fully usable signed-out (local-only), so nothing here is on a
- * critical path.
+ * Every function requires cloud sync to be configured; callers should gate on
+ * isCloudSyncConfigured() first. Signing in is optional: the app is fully
+ * usable signed out (local-only), so nothing here is on a critical path.
+ *
+ * Sign-in is by emailed code only (no passwords). The same code creates an
+ * account for a new address.
  */
 
-import { User } from '@supabase/supabase-js';
 import { requireSupabase } from '../../lib/supabase';
 import { wipeLocalAccountData } from '../sync/engine';
-import { applyRecoveryEvent } from './recovery';
+import { CodePurpose, verifyTypeFor } from './codes';
 
-/**
- * What an emailed code is for: confirming a new account, resetting a
- * password, or confirming a new email address (sent to the new address).
- */
-export type CodePurpose = 'signup' | 'recovery' | 'email_change';
+export type { CodePurpose } from './codes';
 
-export async function signUp(
-  email: string,
-  password: string,
-): Promise<{ needsConfirmation: boolean }> {
-  const { data, error } = await requireSupabase().auth.signUp({ email, password });
-  if (error) throw error;
-  return { needsConfirmation: !data.session };
-}
-
-export async function signIn(email: string, password: string): Promise<void> {
-  // Release any recovery hold left by an interrupted recovery. Done before
-  // signing in, so App.tsx never shows "Set a new password" for this session.
-  await applyRecoveryEvent('password-sign-in');
-  const { error } = await requireSupabase().auth.signInWithPassword({ email, password });
+/** Emails a sign-in code. A new address gets an account once the code is accepted. */
+export async function sendSignInCode(email: string): Promise<void> {
+  const { error } = await requireSupabase().auth.signInWithOtp({
+    email,
+    options: { shouldCreateUser: true },
+  });
   if (error) throw error;
 }
 
@@ -48,21 +37,9 @@ export async function signOut(): Promise<void> {
   await wipeLocalAccountData();
 }
 
-/** Emails a recovery code (D2: codes typed into the app, no links). */
-export async function sendPasswordReset(email: string): Promise<void> {
-  const { error } = await requireSupabase().auth.resetPasswordForEmail(email);
-  if (error) throw error;
-}
-
-/** Sends a fresh sign-up confirmation code. */
-export async function resendSignupCode(email: string): Promise<void> {
-  const { error } = await requireSupabase().auth.resend({ type: 'signup', email });
-  if (error) throw error;
-}
-
 export async function resendCode(email: string, purpose: CodePurpose): Promise<void> {
-  if (purpose === 'recovery') {
-    await sendPasswordReset(email);
+  if (purpose === 'sign_in') {
+    await sendSignInCode(email);
     return;
   }
   const { error } = await requireSupabase().auth.resend({ type: purpose, email });
@@ -80,48 +57,30 @@ export async function requestEmailChange(newEmail: string): Promise<void> {
 }
 
 /**
- * Verifies an emailed code. For sign-up and recovery, success creates a
- * session and the auth listener in App.tsx takes over; for an email change
- * the session continues with the new address. For recovery, the hold is set before verifying so
- * the user lands on "Set a new password" whichever auth event fires.
+ * Verifies an emailed code. For sign-in, success creates a session and the
+ * auth listener in App.tsx takes over; for an email change the session
+ * continues with the new address.
  */
 export async function verifyCode(
   email: string,
   code: string,
   purpose: CodePurpose,
 ): Promise<void> {
-  if (purpose === 'recovery') await applyRecoveryEvent('recovery-verify-started');
-  const { error } = await requireSupabase().auth.verifyOtp({ email, token: code, type: purpose });
-  if (error) {
-    if (purpose === 'recovery') await applyRecoveryEvent('recovery-verify-failed');
-    throw error;
-  }
-}
-
-/** Saves the new password after a recovery code and releases the hold. */
-export async function completePasswordRecovery(newPassword: string): Promise<void> {
-  await updatePassword(newPassword);
-  await applyRecoveryEvent('password-saved');
-}
-
-/**
- * Leaving "Set a new password" without saving. This is an involuntary
- * sign-out, not D3: nothing on the phone is wiped, and the ownership rule
- * decides at the next sign-in.
- */
-export async function abandonPasswordRecovery(): Promise<void> {
-  await requireSupabase().auth.signOut().catch(() => {});
-  await applyRecoveryEvent('recovery-abandoned');
-}
-
-export async function updatePassword(newPassword: string): Promise<void> {
-  const { error } = await requireSupabase().auth.updateUser({ password: newPassword });
+  const { error } = await requireSupabase().auth.verifyOtp({
+    email,
+    token: code,
+    type: verifyTypeFor(purpose),
+  });
   if (error) throw error;
 }
 
-export async function getUser(): Promise<User | null> {
-  const { data: { user } } = await requireSupabase().auth.getUser();
-  return user;
+/**
+ * The signed-in account, from the session on the phone (no network), or null
+ * when signed out. Offline, a signed-in user still reads as signed in.
+ */
+export async function getSignedInUser(): Promise<{ email: string } | null> {
+  const { data: { session } } = await requireSupabase().auth.getSession();
+  return session ? { email: session.user.email ?? '' } : null;
 }
 
 export async function deleteAccount(): Promise<void> {

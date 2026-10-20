@@ -24,7 +24,7 @@ After a merge, the **Release** workflow runs the type check and tests again befo
 
 ## What is *not* tested automatically
 
-- **Sign-in, sync and anything that needs your Supabase account.** Test builds run *local-only*, the way the app works with no cloud set up: no sign-in screen, nothing leaves the phone. That keeps tests fast and means no real accounts or data are touched. It also means the **Account** button doesn't appear in the flows. Sign-in, sync, change email/password and account deletion still need a check on your phone.
+- **Sign-in, sync and anything that needs your Supabase account.** Test builds run *local-only*, the way the app works with no cloud set up: no sign-in screen, nothing leaves the phone. That keeps tests fast and means no real accounts or data are touched. It also means the **Account** button doesn't appear in the flows. Sign-in with a code, sync, change email and account deletion still need a check on your phone (component tests cover the sign-in screens with a stand-in for Supabase).
 - **How things look and feel on your own phone:** your keyboard, exact spacing around the status bar and navigation bar, fonts. The emulator is a standard Pixel-style virtual phone.
 - **Exact positions on screen.** Flows show that buttons *work*, for example that a tap on ＋ opens Add, but can't measure where they sit. The screenshots let you look.
 - **Notification timing.** Tests check *what* gets scheduled, not that it arrives at 9am.

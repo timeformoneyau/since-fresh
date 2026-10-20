@@ -1,21 +1,14 @@
 import { StyleSheet } from 'react-native';
 import { colours, fonts } from '../../theme/tokens';
 
-/** Shared styling for the auth stack. Ported from the `since` codebase. */
+/** Shared styling for the sign-in and code screens (shown under a header). */
 export const authStyles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colours.background },
   container: {
     flexGrow: 1,
     paddingHorizontal: 28,
-    paddingTop: 80,
+    paddingTop: 24,
     paddingBottom: 40,
-  },
-  appName: {
-    fontSize: 32,
-    fontFamily: fonts.bold,
-    color: colours.textPrimary,
-    letterSpacing: -0.5,
-    marginBottom: 32,
   },
   heading: {
     fontSize: 26,
