@@ -2,7 +2,7 @@
 # Database tests. Builds the schema two ways, checks they end the same, and
 # runs the access-rule tests against each:
 #   - fresh:   a new project (supabase/schema.sql)
-#   - upgrade: an existing project (the schema before 003, then 003)
+#   - upgrade: an existing project (the schema before 003, then 003, 004)
 # Each migration is applied twice, to prove re-running it changes nothing.
 #
 # Needs a Postgres superuser, given by the usual PG* environment variables.
@@ -51,7 +51,8 @@ fresh=$(describe since_test_fresh)
 
 newdb since_test_upgrade
 apply since_test_upgrade supabase_stub.sql fixtures/schema_before_003.sql \
-  ../migrations/003_history_table.sql ../migrations/003_history_table.sql
+  ../migrations/003_history_table.sql ../migrations/003_history_table.sql \
+  ../migrations/004_households.sql ../migrations/004_households.sql
 
 if ! diff <(echo "$fresh") <(describe since_test_upgrade); then
   echo "FAILED: a fresh project and an upgraded one end with different schemas (diff above)"
@@ -59,18 +60,26 @@ if ! diff <(echo "$fresh") <(describe since_test_upgrade); then
 fi
 echo "ok   a fresh project and an upgraded one end with the same schema"
 
-# Running 003 on a project that already has it (or was set up fresh) is harmless
-apply since_test_fresh ../migrations/003_history_table.sql
+# Running the migrations on a project that already has them (or was set up
+# fresh) is harmless
+apply since_test_fresh ../migrations/003_history_table.sql ../migrations/004_households.sql
 if ! diff <(echo "$fresh") <(describe since_test_fresh); then
-  echo "FAILED: re-running migration 003 changed the schema (diff above)"
+  echo "FAILED: re-running migrations 003 and 004 changed the schema (diff above)"
   exit 1
 fi
-echo "ok   re-running migration 003 changes nothing"
+echo "ok   re-running migrations 003 and 004 changes nothing"
 
-for db in since_test_fresh since_test_upgrade; do
-  echo "── access rules ($db)"
-  "${PSQL[@]}" -d "$db" -f access_rules.test.sql 2>&1 | sed -n 's/^.*WARNING:  //p; /FAILED/p; /ERROR/p'
-  # psql exits non-zero on the first failure; pipefail carries it here
+# Each test file runs on a fresh copy of both schemas, so tests can't
+# depend on each other's rows
+for test in *.test.sql; do
+  for route in fresh upgrade; do
+    db="since_test_${route}_run"
+    "${PSQL[@]}" -d postgres -c "drop database if exists $db" -c "create database $db template since_test_$route"
+    echo "── $test ($route)"
+    "${PSQL[@]}" -d "$db" -f "$test" 2>&1 | sed -n 's/^.*WARNING:  //p; /FAILED/p; /ERROR/p'
+    # psql exits non-zero on the first failure; pipefail carries it here
+    "${PSQL[@]}" -d postgres -c "drop database $db"
+  done
 done
 
 "${PSQL[@]}" -d postgres -c "drop database since_test_fresh" -c "drop database since_test_upgrade"
