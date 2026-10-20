@@ -45,6 +45,9 @@ async function samsSharedItem(name: string, lastDone = '2026-01-05') {
   await AsyncStorage.setItem('@since_v1_items', JSON.stringify({ version: 3, items }));
 }
 
+/** The list shows empty for a moment while items load; a cold start on CI can take a few seconds. */
+const LIST_LOADS = { timeout: 5000 };
+
 beforeEach(async () => {
   await AsyncStorage.clear();
   jest.clearAllMocks();
@@ -53,7 +56,7 @@ beforeEach(async () => {
 it('without a household, there is no filter, no tag and no "Who is this for?"', async () => {
   await createItem({ name: 'Gutters', category: 'Household', lastDoneDate: '2026-05-01', repeatValue: 6, repeatUnit: 'months' });
   render(<App />);
-  await screen.findByTestId('item-Gutters');
+  await screen.findByTestId('item-Gutters', {}, LIST_LOADS);
   expect(screen.queryByTestId('main-filter-all')).toBeNull();
   fireEvent.press(screen.getByTestId('main-add-button'));
   await screen.findByTestId('add-name-input');
@@ -64,7 +67,7 @@ it('adding an item for the household shares it, and the list tags and filters it
   await inHousehold('member');
   await createItem({ name: 'Gutters', category: 'Household', lastDoneDate: '2026-05-01', repeatValue: 6, repeatUnit: 'months' });
   render(<App />);
-  await screen.findByTestId('item-Gutters');
+  await screen.findByTestId('item-Gutters', {}, LIST_LOADS);
 
   fireEvent.press(screen.getByTestId('main-add-button'));
   fireEvent.changeText(await screen.findByTestId('add-name-input'), 'Bins');
@@ -90,7 +93,7 @@ it("a member can't delete, or change who it's for on, someone else's shared item
   await inHousehold('member');
   await samsSharedItem('Recycling');
   render(<App />);
-  await screen.findByTestId('item-Recycling');
+  await screen.findByTestId('item-Recycling', {}, LIST_LOADS);
   expect(screen.queryByTestId('item-Recycling-delete')).toBeNull();
 
   fireEvent.press(screen.getByTestId('item-Recycling-edit'));
@@ -103,7 +106,7 @@ it("the household's owner can delete a member's shared item", async () => {
   await inHousehold('owner');
   await samsSharedItem('Recycling');
   render(<App />);
-  await screen.findByTestId('item-Recycling');
+  await screen.findByTestId('item-Recycling', {}, LIST_LOADS);
   expect(screen.getByTestId('item-Recycling-delete')).toBeTruthy();
 });
 
@@ -111,7 +114,7 @@ it('the item screen says who did each entry, and offers "Remind me about this"',
   await inHousehold('member');
   await samsSharedItem('Recycling');
   render(<App />);
-  fireEvent.press(await screen.findByTestId('item-Recycling-history'));
+  fireEvent.press(await screen.findByTestId('item-Recycling-history', {}, LIST_LOADS));
   expect(await screen.findByTestId('history-done-by-0')).toHaveTextContent('Done by Sam');
   expect(screen.getByTestId('detail-remind-me')).toBeTruthy();
 });
