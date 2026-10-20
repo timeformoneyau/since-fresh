@@ -37,3 +37,22 @@ jest.mock('react-native-safe-area-context', () =>
 jest.mock('expo-crypto', () => ({
   randomUUID: () => require('crypto').randomUUID(),
 }));
+
+// Backup files (Account → Backup file). Native modules, so tests get stand-ins:
+// writes are kept in memory and the picker returns whatever a test sets.
+jest.mock('expo-file-system', () => {
+  const files = new Map();
+  class File {
+    constructor(...parts) {
+      this.uri = parts.map((p) => (typeof p === 'string' ? p : p.uri)).join('/');
+    }
+    create() { files.set(this.uri, ''); }
+    write(text) { files.set(this.uri, text); }
+    async text() { return files.get(this.uri) ?? ''; }
+  }
+  return { File, Paths: { cache: { uri: 'file:///cache' } }, __files: files };
+});
+jest.mock('expo-sharing', () => ({ shareAsync: jest.fn(async () => {}) }));
+jest.mock('expo-document-picker', () => ({
+  getDocumentAsync: jest.fn(async () => ({ canceled: true, assets: [] })),
+}));

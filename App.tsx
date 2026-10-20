@@ -82,7 +82,11 @@ function AppNavigator() {
       <AppStack.Screen name="Edit" component={EditItemScreen} options={{ title: '' }} />
       <AppStack.Screen name="Detail" component={DetailScreen} options={{ headerShown: false }} />
       <AppStack.Screen name="EditEntry" component={EditHistoryEntryScreen} options={{ title: '' }} />
-      <AppStack.Screen name="Account" component={AccountScreen} options={{ title: 'Account' }} />
+      <AppStack.Screen
+        name="Account"
+        component={AccountScreen}
+        options={{ title: isCloudSyncConfigured() ? 'Account' : 'Backup' }}
+      />
       <AppStack.Screen name="SignIn" component={SignInScreen} options={{ title: 'Sign in' }} />
       <AppStack.Screen
         name="ChangeEmail"

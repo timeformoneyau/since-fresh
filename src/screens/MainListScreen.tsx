@@ -131,17 +131,16 @@ export default function MainListScreen() {
           <Text style={styles.wordmark}>Since</Text>
         </View>
         <View style={styles.headerActions}>
-          {isCloudSyncConfigured() && (
-            <TouchableOpacity
-              style={styles.accountBtn}
-              testID="main-account-button"
-              onPress={() => navigation.navigate('Account')}
-              accessibilityLabel="Account"
-              accessibilityRole="button"
-            >
-              <MaterialCommunityIcons name="account-outline" size={24} color={palette.ringPale} />
-            </TouchableOpacity>
-          )}
+          {/* Always shown: the backup file works without an account */}
+          <TouchableOpacity
+            style={styles.accountBtn}
+            testID="main-account-button"
+            onPress={() => navigation.navigate('Account')}
+            accessibilityLabel={isCloudSyncConfigured() ? 'Account' : 'Backup'}
+            accessibilityRole="button"
+          >
+            <MaterialCommunityIcons name="account-outline" size={24} color={palette.ringPale} />
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.addBtn}
             testID="main-add-button"
