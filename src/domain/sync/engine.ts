@@ -16,10 +16,13 @@
 import { loadItems, saveItems, clearItems } from '../items/storage';
 import {
   cloudLoadItems,
+  cloudLoadEntries,
   cloudUpsertMany,
+  cloudPushEntries,
   cloudDeleteMany,
   cloudLoadTombstones,
 } from '../items/cloudStorage';
+import { loadCursor, saveCursor, clearCursor } from './cursor';
 import { isCloudSyncConfigured, getSupabase } from '../../lib/supabase';
 import { loadQueue, removeFromQueue, enqueueUpsert, clearQueue } from './queue';
 import { loadOwner, saveOwner, clearOwner } from './owner';
@@ -67,6 +70,12 @@ async function isOwnedBySignedInUser(): Promise<boolean> {
   }
 }
 
+/** The signed-in account, from the session on the phone. */
+async function sessionUserId(): Promise<string | null> {
+  const { data: { session } } = (await getSupabase()?.auth.getSession()) ?? { data: { session: null } };
+  return session?.user.id ?? null;
+}
+
 const ports: SyncPorts = {
   isConfigured: isCloudSyncConfigured,
   isAuthenticated,
@@ -77,8 +86,18 @@ const ports: SyncPorts = {
   removeFromQueue,
   cloudUpsertMany,
   cloudDeleteMany,
+  cloudPushEntries,
   cloudLoadItems,
+  cloudLoadEntries,
   cloudLoadTombstones,
+  loadCursor: async () => {
+    const userId = await sessionUserId();
+    return userId ? loadCursor(userId) : null;
+  },
+  saveCursor: async (cursor) => {
+    const userId = await sessionUserId();
+    if (userId) await saveCursor(userId, cursor);
+  },
   afterMerge: rescheduleAllNotifications,
   classifyError: classifySyncError,
 };
@@ -129,6 +148,7 @@ async function clearLocalData(): Promise<void> {
   await waitForSync();
   await clearItems();
   await clearQueue();
+  await clearCursor();
   await clearLastSyncedAt();
   await cancelAllReminders();
 }

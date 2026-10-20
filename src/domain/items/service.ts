@@ -21,7 +21,7 @@ import {
   scheduleItemNotifications,
   rescheduleAllNotifications,
 } from '../../notifications/scheduler';
-import { enqueueUpsert, enqueueDelete } from '../sync/queue';
+import { enqueueUpsert, enqueueDelete, enqueueEntryUpsert, enqueueEntryDelete } from '../sync/queue';
 import { syncInBackground } from '../sync/engine';
 import { withoutCompletion, copyForRestore } from './undo';
 import {
@@ -57,12 +57,22 @@ function generateId(): string {
   return randomUUID();
 }
 
+/**
+ * What a change touched, so sync sends just that (sync/queueOps.ts): the
+ * item's own fields, and/or one history entry. Marking done doesn't touch the
+ * fields, so it never sends this phone's copy of them over another phone's
+ * newer edit.
+ */
+type Change = { fields?: boolean; entryChanged?: string; entryDeleted?: string };
+
 /** Save one changed item, reschedule its notifications and record it for sync. */
-async function persist(items: SinceItem[], updated: SinceItem): Promise<DerivedItem> {
+async function persist(items: SinceItem[], updated: SinceItem, change: Change): Promise<DerivedItem> {
   await saveItems(items.map((i) => (i.id === updated.id ? updated : i)));
   await scheduleItemNotifications(updated);
 
-  await enqueueUpsert(updated.id);
+  if (change.fields) await enqueueUpsert(updated.id);
+  if (change.entryChanged) await enqueueEntryUpsert({ itemId: updated.id, entryId: change.entryChanged });
+  if (change.entryDeleted) await enqueueEntryDelete({ itemId: updated.id, entryId: change.entryDeleted });
   syncInBackground();
 
   return deriveItem(updated);
@@ -142,9 +152,10 @@ export async function updateItem(itemId: string, updates: UpdateItemInput): Prom
   if (lastDoneDate !== undefined && lastDoneDate !== existing.lastDoneDate) {
     const newest = sortNewestFirst(existing.history)[0];
     updated = updateEntry(updated, newest.id, { date: lastDoneDate }, todayString(), now);
+    return persist(items, updated, { fields: true, entryChanged: newest.id });
   }
 
-  return persist(items, updated);
+  return persist(items, updated, { fields: true });
 }
 
 /**
@@ -162,14 +173,15 @@ export async function markItemDone(
 
   const entryId = generateId();
   const updated = addEntry(existing, { id: entryId, date }, todayString(), new Date().toISOString());
-  return { item: await persist(items, updated), entryId };
+  return { item: await persist(items, updated, { entryChanged: entryId }), entryId };
 }
 
 /** Add a past entry ("Did it on another day?"). Throws HistoryError for a future date. */
 export async function addHistoryEntry(itemId: string, date: string, note?: string): Promise<DerivedItem> {
   const { items, existing } = await loadOne(itemId);
-  const updated = addEntry(existing, { id: generateId(), date, note }, todayString(), new Date().toISOString());
-  return persist(items, updated);
+  const entryId = generateId();
+  const updated = addEntry(existing, { id: entryId, date, note }, todayString(), new Date().toISOString());
+  return persist(items, updated, { entryChanged: entryId });
 }
 
 /**
@@ -183,14 +195,14 @@ export async function updateHistoryEntry(
 ): Promise<DerivedItem> {
   const { items, existing } = await loadOne(itemId);
   const updated = updateEntry(existing, entryId, changes, todayString(), new Date().toISOString());
-  return persist(items, updated);
+  return persist(items, updated, { entryChanged: entryId });
 }
 
 /** Delete an entry. The last one can't go (HistoryError 'last-entry'). */
 export async function deleteHistoryEntry(itemId: string, entryId: string): Promise<DerivedItem> {
   const { items, existing } = await loadOne(itemId);
   const updated = deleteEntry(existing, entryId, new Date().toISOString());
-  return persist(items, updated);
+  return persist(items, updated, { entryDeleted: entryId });
 }
 
 /**
@@ -214,7 +226,7 @@ export async function undoMarkDone(
   await saveItems(items.map((i) => (i.id === itemId ? updated : i)));
   await scheduleItemNotifications(updated);
 
-  await enqueueUpsert(updated.id);
+  await enqueueEntryDelete({ itemId: updated.id, entryId: eventId });
   syncInBackground();
   notifyItemsChanged();
 

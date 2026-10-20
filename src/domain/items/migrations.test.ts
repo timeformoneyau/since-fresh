@@ -6,7 +6,8 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAndMigrate, STORAGE_VERSION } from './migrations.ts';
+import { parseAndMigrate, toEnvelope, STORAGE_VERSION } from './migrations.ts';
+import { mergeItems, type CloudEntry } from '../sync/runSync.ts';
 
 const base = {
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -198,5 +199,37 @@ describe('optional sign-in', () => {
     ];
     const raw = JSON.stringify({ version: STORAGE_VERSION, items });
     assert.deepEqual(parseAndMigrate(raw), items);
+  });
+});
+
+describe('entries synced one by one (sync plan, PR 3)', () => {
+  // A sync now merges cloud items (which carry a server change time) and
+  // cloud history entries into the list. What it saves must be the same
+  // stored shape as before, so this build and older ones load it unchanged.
+  test('a list saved after a sync has no cloud-only fields and loads unchanged', () => {
+    const local = {
+      ...base,
+      id: 'gutters',
+      name: 'Gutters',
+      category: 'Household',
+      lastDoneDate: '2026-09-01',
+      history: [{ id: 'e1', date: '2026-09-01' }],
+      repeatValue: 6,
+      repeatUnit: 'months' as const,
+    };
+    const fromCloud = { ...local, name: 'Clean gutters', serverUpdatedAt: '2026-10-20T00:00:01.000Z' };
+    const entry: CloudEntry = {
+      itemId: 'gutters', id: 'e2', date: '2026-10-10', note: 'Ladder', createdAt: '2026-10-10T08:00:00.000Z',
+      deletedAt: null, serverUpdatedAt: '2026-10-20T00:00:02.000Z',
+    };
+
+    const merged = mergeItems([local], [fromCloud], new Set(), [entry]);
+    assert.equal('serverUpdatedAt' in merged[0], false);
+
+    const loaded = parseAndMigrate(toEnvelope(merged));
+    assert.deepEqual(loaded, merged);
+    // Older builds read history[0] as the latest entry, and lastDoneDate
+    assert.equal(loaded[0].history[0].id, 'e2');
+    assert.equal(loaded[0].lastDoneDate, '2026-10-10');
   });
 });
