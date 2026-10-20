@@ -40,5 +40,12 @@ expect 0 supabase/schema.sql src/domain/items/migrations.test.ts
 expect 0 src/lib/supabase.ts src/domain/auth/errors.test.ts
 expect 0 src/domain/items/migrations.ts src/domain/items/migrations.test.ts
 expect 0 src/domain/items/service.ts src/domain/items/undo.test.ts
+# The schema: a migration needs a SQL test (or a sync/migrations test) beside it
+expect 1 supabase/migrations/003_history_table.sql
+expect 0 supabase/migrations/003_history_table.sql supabase/tests/access_rules.test.sql
+# ...but a SQL test doesn't stand in for app sync code
+expect 1 src/domain/sync/engine.ts supabase/tests/access_rules.test.sql
+# Test tooling on its own is not sensitive
+expect 0 supabase/tests/run.sh
 
 exit $fails

@@ -26,19 +26,23 @@ code_touched() { echo "$CHANGED" | grep -E "$1" | grep -Evq '\.test\.tsx?$'; }
 NAMES=(
   "stored data (item shape, storage, migrations)"
   "stored data (item changes)"
-  "sync or the Supabase schema"
+  "sync"
+  "the Supabase schema"
   "sign-in (auth)"
 )
 CODE=(
   '^src/domain/items/(storage|migrations|cloudStorage|types)\.ts$|^src/types/'
   '^src/domain/items/service\.ts$'
-  '^src/domain/sync/|^supabase/'
+  '^src/domain/sync/'
+  '^supabase/(schema\.sql|migrations/)'
   '^src/domain/auth/|^src/lib/supabase\.ts$'
 )
+# The schema's own tests run the SQL on Postgres (supabase/tests/run.sh)
 TESTS=(
   '^src/domain/items/migrations\.test\.ts$'
   '^src/domain/items/[^/]+\.test\.ts$'
   '^src/domain/(sync/[^/]+|items/migrations)\.test\.ts$'
+  '^supabase/tests/[^/]+\.test\.sql$|^src/domain/(sync/[^/]+|items/migrations)\.test\.ts$'
   '^src/domain/(auth/[^/]+|items/migrations)\.test\.ts$'
 )
 
