@@ -27,7 +27,7 @@ belongs to a separate app, UseBy.
 
 | Repo | Path | Role |
 |---|---|---|
-| **since-fresh** | this repo | The Expo/RN mobile app. Local-first storage; optional Supabase account + background sync. |
+| **since-fresh** | this repo | The Expo/RN mobile app. Local-first storage; optional Supabase account, sync and households. |
 
 There is also an older `timeformoneyau/since` repo — the original version this project is a
 rebuild of. Its auth, cloud sync, category grouping and completion-history work was consolidated
@@ -40,14 +40,19 @@ deferred, not ported.
 ## 3. Tech stack
 
 - **Expo SDK 54**, React Native 0.81, React 19, new architecture enabled.
-- **React Navigation** (native-stack) — 4 screens.
-- **AsyncStorage** for persistence (single key `@since_v1_items`, storage version 3) — the source
-  of truth. Every write lands locally first and works offline.
-- **Supabase** (`@supabase/supabase-js`) for optional accounts + background sync. Absent
-  credentials means the app runs purely local-only, with no sign-in step.
+- **React Navigation** (native-stack) — 10 screens (section 6).
+- **AsyncStorage** for persistence — the source of truth. Every write lands locally first and
+  works offline. Keys: `@since_v1_items` (the list, storage version 3), `@since_sync_queue_v1`
+  (changes waiting to sync), `@since_sync_cursor_v1`, `@since_last_synced_v1`, `@since_owner_v1`
+  (which account owns this phone's list), `@since_household_v1` (cached household).
+- **Supabase** (`@supabase/supabase-js`) for the optional account (emailed code), sync and
+  households. Absent credentials means the app runs purely local-only, with no sign-in.
 - **expo-notifications** for **local** (not push) reminders.
-- **date-fns** for all date math.
+- **date-fns** for all date math; **expo-crypto** for UUIDs.
+- **expo-file-system**, **expo-sharing**, **expo-document-picker** for the backup file.
+- **expo-updates** for over-the-air updates (EAS Update, fingerprint runtime version).
 - **expo-constants** to read config from `extra` (Supabase keys from `app.json`).
+- Fonts Instrument Sans / Instrument Serif; design tokens in `src/theme/tokens.ts`.
 
 ---
 
@@ -58,18 +63,26 @@ deferred, not ported.
 ```ts
 type RepeatUnit = 'days' | 'weeks' | 'months' | 'years';
 
-interface CompletionEvent { id: string; date: string; }  // YYYY-MM-DD
+interface CompletionEvent {      // one history entry
+  id: string;
+  date: string;                  // YYYY-MM-DD, a local calendar date
+  note?: string;
+  createdAt?: string;
+  createdBy?: string;            // account that recorded it, for "Done by"
+}
 
 interface SinceItem {
   id: string;
   name: string;
   category: string;
-  lastDoneDate: string;          // ISO YYYY-MM-DD
-  history: CompletionEvent[];    // newest first
-  repeatValue: number | null;    // null = "tracked only" (no reminders)
+  lastDoneDate: string;          // YYYY-MM-DD; always history[0].date, kept for older builds
+  history: CompletionEvent[];    // newest first, never empty
+  repeatValue: number | null;    // null = "Once off" (no reminders)
   repeatUnit: RepeatUnit | null;
   createdAt: string;
   updatedAt: string;
+  ownerId?: string;              // set only on another member's shared item
+  householdId?: string;          // set only on shared items
 }
 
 const DEFAULT_CATEGORIES =
@@ -77,7 +90,16 @@ const DEFAULT_CATEGORIES =
 ```
 
 Due date: `nextDueDate = lastDoneDate + repeatValue · repeatUnit`. Items with no repeat are
-"tracked only". Storage v3 converted any leftover scanned-food items to tracked-only.
+"Once off" (formerly "Tracked only"). Storage v3 converted any leftover scanned-food items to
+once off. Stored data changes are additive only (rollbacks run older code on newer data); every
+new shape gets a case in `src/domain/items/migrations.test.ts`.
+
+Cloud (`supabase/schema.sql`, migrations `002`–`004`): `items` (server-set `server_updated_at`,
+`kind`, `household_id`), `deleted_items` (tombstones), `completion_events` (one row per entry,
+soft deleted), `households`, `household_members`, `household_invites`, `item_mutes`.
+Membership changes only through database functions (`create_household`, `create_invite`,
+`join_household`, `leave_household`, `remove_member`, `transfer_ownership`,
+`delete_household`, `delete_user`).
 
 ---
 
@@ -94,7 +116,7 @@ This wording is central to the product's voice.
 | `It's been a while` | −3 to −14 | rust |
 | `Getting overdue` | −15 to −45 | red |
 | `Long overdue` | beyond −45 | dark red |
-| `null` → shown as **"Tracked only"** | item has no repeat interval | muted |
+| `null` → shown as **"Once off"** | item has no repeat interval | muted |
 
 - Secondary line per card: "Next in N days" / "Tomorrow" / "Due today" / "Overdue by N days".
 - Each card also shows "Done today" / "Last done yesterday" / "Last done N days ago".
@@ -106,25 +128,33 @@ This wording is central to the product's voice.
 ## 6. Screens & navigation (`App.tsx`)
 
 One stack, `AppNavigator`: `Main`, `Add`, `Edit`, `Detail`, `EditEntry`, `Account`, `SignIn`,
-`EnterCode`, `ChangeEmail`. Signing in is optional: the list always opens first. `Account` (titled
+`EnterCode`, `ChangeEmail`, `HouseholdSetup`. Signing in is optional: the list always opens first. `Account` (titled
 "Backup" in a local-only build) offers "Back up and sync" when cloud sync is configured, and always
 offers a backup file: export a JSON file through the share sheet, or restore one, which only adds
 what's missing (`domain/backup/backup.ts`). Sign-in is by emailed code only,
 no passwords (`domain/auth/codes.ts`); the same code creates an account for a new address.
 
-- **Main** (`MainListScreen`) — items grouped into per-category `SectionList` sections. Grouping
-  nests urgency sorting: sections are ordered by their most-urgent member, items stay
-  urgency-sorted within. Swipeable `ItemCard`s (swipe left → Edit / Delete;
-  "Done" button marks done today). Done and Delete each show a toast with **Undo**
+- **Main** (`MainListScreen`) — one `FlatList`, sorted most-urgent-first (`sortItems`). Each
+  `ItemCard` has a "Done" button (marks done today), Edit and Delete buttons, a progress bar
+  through the interval, and a Household tag on shared items. In a household, an
+  All / Just me / Household filter sits above the list. Done and Delete each show a toast with **Undo**
   (`undoMarkDone` / `restoreDeletedItem` in `service.ts`; a restored item takes a new id
   because the old one is tombstoned in the cloud). A one-line `SystemStatus` summary sits under the header
   ("All good. Nothing needs attention." / "A few things might need attention." …). Header has
-  **＋** (add). Empty state shows the tagline, "Add something", and quick-start chips.
-- **Add** (`AddItemScreen`) — name, last-done date, category, repeat-every (number + unit). Shows a
-  keyword **suggestion banner** (from `suggestions.ts`).
-- **Edit** (`EditItemScreen`) — same fields plus delete (no confirm; Undo toast).
-- **History** (`DetailScreen`) — completion log, "Mark done today" (with Undo), an **Undo**
-  link on the newest entry, and an **Edit** link (so Edit/Delete aren't swipe-only).
+  the Account button and **＋** (add). Empty state shows "Add something" and quick-start chips.
+  Opening the list (on focus) runs a sync.
+- **Add** (`AddItemScreen`) and **Edit** (`EditItemScreen`) share `ItemForm`: name, "Who is
+  this for?" (Just me / Household; only in a household, only for the item's creator), "Repeats"
+  (every N days/weeks/months/years) or "Once off", last-done date, category. Add shows a keyword
+  **suggestion** (`suggestions.ts`). Save buttons: "Track this" / "Save changes". Edit also has
+  Delete (no confirm; Undo toast), offered only where the household rules allow it.
+- **Detail** (`DetailScreen`) — status card, "Mark done today", "Add a past entry", "Remind me
+  about this" switch (shared items), and the history; each entry shows "Done by {name}" on shared
+  items and opens **EditEntry** (`EditHistoryEntryScreen`: change date or note, or delete).
+- **Account** — signed out: "Back up and sync" (→ `SignIn` → `EnterCode`). Signed in: email,
+  last backup and Sync now, the Household section (create / join via `HouseholdSetup`, invite
+  and share the code, members, make owner, remove, leave, delete), change email, sign out
+  (warns if changes haven't synced), delete account. Always: the backup file section.
 
 ---
 
@@ -143,7 +173,8 @@ every 14 days, to avoid per-item noise. A hard cap of **2 notifications per cale
 resolved by priority (grouped > 7-day overdue > due today > coming up). Wording deliberately avoids
 appointment-style phrasing.
 
-Notifications recompute on app start and after any add/edit/done/delete.
+Notifications recompute on app start, after any add/edit/done/delete and after every sync that
+changes items. Items the member muted (`item_mutes`) are skipped (`scheduler.ts`).
 
 > Expo Go (SDK 53+) prints a harmless console warning about push notifications. Local notifications
 > still work; the warning disappears in a real (EAS) build.
@@ -152,9 +183,9 @@ Notifications recompute on app start and after any add/edit/done/delete.
 
 ## 8. Food tracking (removed)
 
-Removed in Phase 1 of the accounts plan (`docs/Minded Plan.txt`): the scan screen, camera, proxy
-calls and expiry mode are gone, and `since-proxy` now serves UseBy only. The `expiry_date` and
-`source` database columns remain until Phase 2's migration; the app ignores them.
+Removed in October 2026 (`docs/Minded Plan.txt`, an earlier plan; "Minded" is an old working
+name): the scan screen, camera, proxy calls and expiry mode are gone, and `since-proxy` now
+serves UseBy only. Any `expiry_date` / `source` columns left in the database are ignored.
 
 ---
 
@@ -166,7 +197,7 @@ Tone: **calm, plain, non-nagging, slightly warm.** Examples to match:
 - Reassurance over alarm: "All good. Nothing needs attention." / "Something's coming up soon."
 - Never "You forgot!" or "Overdue!!" — it's "It's been a while", "might need attention",
   "due in N days".
-- No-repeat items are "Tracked only", not "incomplete".
+- No-repeat items are "Once off", not "incomplete".
 - Buttons: "Add something", "Track this", "Save changes", "Done".
 
 ---
@@ -175,30 +206,47 @@ Tone: **calm, plain, non-nagging, slightly warm.** Examples to match:
 
 ```
 src/
-  types/index.ts          SinceItem, RepeatUnit, StatusLabel, DEFAULT_CATEGORIES, nav params
+  types/index.ts          SinceItem, CompletionEvent, RepeatUnit, StatusLabel, DEFAULT_CATEGORIES, nav params
   domain/items/
     types.ts              CreateItemInput, UpdateItemInput, DerivedItem
-    service.ts            ⭐ ONLY entry point for mutations (create/update/markDone/delete).
-                             Coordinates storage + notifications. Screens MUST go through this.
+    service.ts            ⭐ ONLY entry point for item changes (create/update/markDone/delete,
+                             entries, undo, backup restore). Keeps storage, reminders and the
+                             sync queue in step. Screens MUST go through this.
     storage.ts            AsyncStorage load/save (via the migrations envelope)
-    migrations.ts         versioned storage envelope + upgrades of old items (v3 strips food fields)
-    derive.ts             attaches computed status to an item (DerivedItem)
+    migrations.ts         versioned storage envelope + upgrades of old items
+    cloudStorage.ts       Supabase reads/writes for items, entries and tombstones
+    history.ts, undo.ts, display.ts, derive.ts   pure helpers
+  domain/sync/
+    engine.ts             syncNow(): household refresh, push queue, pull, merge, reschedule
+    runSync.ts            ⭐ pure merge and push rules
+    queue.ts, queueOps.ts sync queue (items, entries, deletes)
+    cursor.ts, ownership.ts, owner.ts, lastSynced.ts, classify.ts, backupStatus.ts
+  domain/household/       rules.ts (pure, mirrors the database rules), service.ts, cloud.ts, store.ts
+  domain/auth/            emailed-code sign-in, email change, sign out, delete account
+  domain/backup/          backup.ts (file format, restore that only adds), files.ts
   utils/
     dateUtils.ts          all date math (getNextDueDate, getDaysUntilDue, comingUpThreshold, …)
     statusUtils.ts        ⭐ computeItemStatus, sortItems, secondaryLine
     suggestions.ts        keyword → repeat-interval rules (~10 English-only rules)
   notifications/
     engine.ts             ⭐ full scheduling logic + per-day cap + grouped overdue
-    scheduler.ts          public API, permissions, Android channel setup
-  screens/                MainListScreen, AddItemScreen, EditItemScreen, DetailScreen
-  components/             ItemCard, SystemStatus, CategoryPicker, DatePickerModal, colours.ts
-App.tsx                   navigation + notification permission bootstrap
-app.json                  extra.{supabaseUrl, supabaseAnonKey, eas.projectId}
+    scheduler.ts          public API, permissions, Android channel, skips muted items
+  screens/                MainList, AddItem, EditItem, Detail, EditHistoryEntry, Account,
+                          ChangeEmail, HouseholdSetup, auth/SignIn, auth/EnterCode
+  components/             ItemCard, ItemForm, SystemStatus, StatusChip, CategoryTile,
+                          DatePickerModal, Toast, HouseholdSection, useHousehold, LogoMark
+  theme/tokens.ts         colours, type, spacing
+  lib/supabase.ts         Supabase client (absent config → local-only)
+App.tsx                   navigation, startup (reschedule reminders), auth events
+app.json                  extra.{supabaseUrl, supabaseAnonKey, eas.projectId} (public: no secrets)
 app.config.js             hook for injecting env secrets (none currently)
+supabase/                 schema.sql, migrations/, tests/ (SQL access-rule tests)
+.maestro/                 Android UI flows
 ```
 
-**Invariant that matters:** screens never touch storage or notifications directly — all mutations
-go through `domain/items/service.ts`, the one place that keeps persistence and scheduling in sync.
+**Invariant that matters:** screens never touch storage, Supabase or notifications directly — all
+item changes go through `domain/items/service.ts`, the one place that keeps persistence,
+scheduling and sync in step.
 
 ---
 
@@ -220,27 +268,41 @@ go through `domain/items/service.ts`, the one place that keeps persistence and s
   it. Pulls fetch only rows changed since a per-account cursor, by the server's change time; phone
   clocks are never compared. Marking done doesn't push the item's fields, so the old
   `items.history` copy in the cloud (kept for older builds) only updates on field edits.
+- **Deletes are final in the cloud** (tombstones). Undo-delete and backup restore bring an item
+  back under a new id.
+- **Sync runs** when the list comes into view, on Sync now, and after household actions. Not
+  when the app returns from the background.
+- **Time zones:** entry dates are local calendar dates; members in different time zones can see
+  an entry on different days. Not handled yet.
 - **Supabase is configured** (`extra.supabaseUrl` / publishable `extra.supabaseAnonKey` in
-  `app.json`; schema in `supabase/schema.sql`). Nothing in the repo records the auth + sync path
-  being exercised end-to-end on a device against that project.
+  `app.json`; schema in `supabase/schema.sql`; migrations 003 and 004 applied 20 Oct 2026).
+  Sign-in, sync, the backup file and households pass automated tests but haven't been
+  exercised on a real phone or with two real accounts yet.
 - **No iOS path exercised** (package/bundle id `com.since.app`; EAS project `since-fresh`, 3c35d81c).
 - **Suggestions are English keyword-only**, ~10 hardcoded rules.
 - **No dark mode.**
-- **Tests cover sync and storage migration only.** `npm test` (Node's built-in runner) runs the
-  `runSync.ts` and `migrations.ts` tests. The notification engine and status/date logic remain untested.
+- **Not built yet, by design:** notifications about other members' actions, live updates,
+  iOS / Sign in with Apple, more than one household per person, assigning items to a person,
+  purging long-deleted rows.
+- **Tests** (all in CI, see `TESTING.md`): `npx tsc --noEmit`; `npm test` (Node's test runner,
+  `src/**/*.test.ts`: sync, entries, ownership, migrations, backup, household rules, history,
+  display, undo, auth); `npm run test:ui` (Jest + jest-expo, `*.ui.test.tsx`); database tests
+  (`supabase/tests/run.sh`, access rules as owner, member and outsider); Maestro flows in
+  `.maestro/` on an emulator. The notification engine and status/date logic have no unit tests.
 
 ---
 
 ## 12. How to run / deploy / update
 
 - **App locally:** `npm install && npx expo start` → scan QR with Expo Go (same WiFi).
-- **Installed build:** `eas build --platform android --profile preview` → download/install the APK.
-- **Update workflow:**
-  - App JS or native change → `eas build` + reinstall the APK (EAS Update OTA for JS-only is not
-    set up yet).
+- **Release is automatic** (`RELEASING.md`): every merge to `main` with all checks green
+  publishes to the preview app, then production. A JavaScript-only change goes out as an EAS
+  Update (open the app twice to get it); a native change starts an EAS build and the install
+  link is posted on the PR. Never publish by hand. Rollback: GitHub Actions → **Rollback**.
 
 ---
 
 *Generated 2026-06-29. Updated 2026-08-22 for the since/since-fresh consolidation; 2026-10-02 to
-reflect the secret move, tests and committed Supabase config.
+reflect the secret move, tests and committed Supabase config; 2026-10-20 for emailed-code
+sign-in, entry-by-entry sync, the backup file, households and automatic releases.
 Pull directly from code — no assumptions.*
