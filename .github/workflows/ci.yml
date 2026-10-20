@@ -29,6 +29,35 @@ jobs:
       - name: Component tests (npm run test:ui)
         run: npm run test:ui -- --ci
 
+  # The Supabase schema and its access rules, run on a real Postgres: a fresh
+  # project and an upgraded one must match, and each user sees only their own
+  # rows (supabase/tests/run.sh).
+  database:
+    name: Database tests (SQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Schema and access-rule tests
+        run: bash supabase/tests/run.sh
+
   # Stored data, sync or sign-in code can't change without a test beside it
   # (CLAUDE.md, rule 8). Release refuses to publish a PR without this green.
   data-safety:
