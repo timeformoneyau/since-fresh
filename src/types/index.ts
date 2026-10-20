@@ -8,6 +8,11 @@ export interface CompletionEvent {
   note?: string;
   /** When the entry was recorded. Older entries have none. */
   createdAt?: string;
+  /**
+   * The account that recorded it, from the cloud (households: "Done by").
+   * Absent for entries not yet synced or made before households.
+   */
+  createdBy?: string;
 }
 
 /** The brief's name for a completion event. */
@@ -28,6 +33,14 @@ export interface SinceItem {
   repeatUnit: RepeatUnit | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * The account that owns the item in the cloud (households). Absent means
+   * this phone's own account, or no account at all: every item before
+   * households, and every item made on this phone.
+   */
+  ownerId?: string;
+  /** The household the item is shared with; absent or null means just me. */
+  householdId?: string | null;
 }
 
 export type StatusLabel =
@@ -69,4 +82,6 @@ export type RootStackParamList = {
   ChangeEmail: undefined;
   // Shared by sign-in and email change (domain/auth/codes.ts).
   EnterCode: { email: string; purpose: 'sign_in' | 'email_change' };
+  // Create a household, or join one with a code
+  HouseholdSetup: { mode: 'create' | 'join' };
 };

@@ -6,6 +6,8 @@ export interface CreateItemInput {
   lastDoneDate: string;
   repeatValue: number | null;
   repeatUnit: RepeatUnit | null;
+  /** Shared with this household; absent or null for just me. */
+  householdId?: string | null;
 }
 
 export interface UpdateItemInput {
@@ -14,6 +16,8 @@ export interface UpdateItemInput {
   lastDoneDate?: string;
   repeatValue?: number | null;
   repeatUnit?: RepeatUnit | null;
+  /** Who it's for: a household id, or null for just me. Only its creator may change it. */
+  householdId?: string | null;
 }
 
 /** A SinceItem with all computed fields attached. Single source of truth for derived state. */
