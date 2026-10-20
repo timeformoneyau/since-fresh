@@ -24,6 +24,7 @@ import { shareBackupFile, pickBackupFile } from '../domain/backup/files';
 import { isCloudSyncConfigured } from '../lib/supabase';
 import { todayString } from '../utils/dateUtils';
 import { useToast } from '../components/Toast';
+import HouseholdSection from '../components/HouseholdSection';
 import { colours, fonts } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Account'>;
@@ -286,6 +287,8 @@ export default function AccountScreen() {
         </TouchableOpacity>
         {syncNote !== '' && <Text style={styles.note}>{syncNote}</Text>}
       </View>
+
+      <HouseholdSection />
 
       <BackupFileSection />
 

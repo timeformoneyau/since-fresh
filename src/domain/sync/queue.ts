@@ -20,10 +20,12 @@ import {
   withEntryUpsert,
   withEntryDelete,
   withoutPushed,
+  withoutItems,
   isEmpty,
+  DeleteMeta,
 } from './queueOps';
 
-export type { SyncQueue, EntryRef } from './queueOps';
+export type { SyncQueue, EntryRef, DeleteMeta } from './queueOps';
 
 const QUEUE_KEY = '@since_sync_queue_v1';
 
@@ -51,7 +53,8 @@ async function update(change: (q: SyncQueue) => SyncQueue): Promise<void> {
 }
 
 export const enqueueUpsert = (id: string) => update((q) => withUpsert(q, id));
-export const enqueueDelete = (id: string) => update((q) => withDelete(q, id));
+export const enqueueDelete = (id: string, meta?: DeleteMeta) => update((q) => withDelete(q, id, meta));
+export const forgetQueuedItems = (ids: string[]) => update((q) => withoutItems(q, ids));
 export const enqueueEntryUpsert = (ref: EntryRef) => update((q) => withEntryUpsert(q, ref));
 export const enqueueEntryDelete = (ref: EntryRef) => update((q) => withEntryDelete(q, ref));
 

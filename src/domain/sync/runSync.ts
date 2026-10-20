@@ -39,6 +39,8 @@ export interface EntryRef {
 export interface QueueSnapshot {
   upserts: string[];
   deletes: string[];
+  /** Whose each deleted item was, when it wasn't this account's own (households). */
+  deleteMeta?: Record<string, { ownerId?: string; householdId?: string | null }>;
   entryUpserts?: EntryRef[];
   entryDeletes?: EntryRef[];
 }
@@ -52,6 +54,8 @@ export interface CloudEntry {
   createdAt: string | null;
   deletedAt: string | null;
   serverUpdatedAt: string;
+  /** Who recorded it (households: "Done by"). */
+  createdBy?: string | null;
 }
 
 /** An item as pulled from the cloud, with the server's change time. */
@@ -60,6 +64,8 @@ export type CloudItem = SinceItem & { serverUpdatedAt?: string };
 /** A history entry to push. */
 export interface EntryRow {
   itemId: string;
+  /** The item's owner, when it isn't this account (a shared item). */
+  ownerId?: string;
   id: string;
   date: string;
   note: string | null;
@@ -72,7 +78,7 @@ export interface EntryPush {
   /** Changed on this phone: overwrites date and note. */
   overwrite: EntryRow[];
   /** Deleted on this phone: soft deleted in the cloud. */
-  softDelete: EntryRef[];
+  softDelete: Array<EntryRef & { ownerId?: string }>;
 }
 
 /** Server change times reached by the last successful pull, per table. */
@@ -95,7 +101,7 @@ export interface SyncPorts {
   loadQueue(): Promise<QueueSnapshot>;
   removeFromQueue(ops: QueueSnapshot): Promise<void>;
   cloudUpsertMany(items: SinceItem[]): Promise<void>;
-  cloudDeleteMany(ids: string[]): Promise<void>;
+  cloudDeleteMany(ids: string[], meta?: QueueSnapshot['deleteMeta']): Promise<void>;
   cloudPushEntries(push: EntryPush): Promise<void>;
   /** Items changed since the cursor time (all when null). */
   cloudLoadItems(since: string | null): Promise<CloudItem[]>;
@@ -137,6 +143,7 @@ function fromCloud(e: CloudEntry): CompletionEvent {
     date: e.date,
     ...(e.note ? { note: e.note } : {}),
     ...(e.createdAt ? { createdAt: e.createdAt } : {}),
+    ...(e.createdBy ? { createdBy: e.createdBy } : {}),
   };
 }
 
@@ -212,8 +219,15 @@ export function mergeItems(
   return [...byId.values()];
 }
 
-function toRow(itemId: string, e: CompletionEvent): EntryRow {
-  return { itemId, id: e.id, date: e.date, note: e.note ?? null, ...(e.createdAt ? { createdAt: e.createdAt } : {}) };
+function toRow(item: SinceItem, e: CompletionEvent): EntryRow {
+  return {
+    itemId: item.id,
+    ...(item.ownerId ? { ownerId: item.ownerId } : {}),
+    id: e.id,
+    date: e.date,
+    note: e.note ?? null,
+    ...(e.createdAt ? { createdAt: e.createdAt } : {}),
+  };
 }
 
 /** What to send for the queued changes, from the items as they are now. */
@@ -227,14 +241,20 @@ export function entryPushFor(queue: QueueSnapshot, items: SinceItem[]): EntryPus
   const insertOnly = queue.upserts
     .map((id) => byId.get(id))
     .filter((i): i is SinceItem => i !== undefined)
-    .flatMap((i) => i.history.map((e) => toRow(i.id, e)));
+    .flatMap((i) => i.history.map((e) => toRow(i, e)));
 
   const overwrite = (queue.entryUpserts ?? []).flatMap((ref) => {
-    const entry = byId.get(ref.itemId)?.history.find((e) => e.id === ref.entryId);
-    return entry ? [toRow(ref.itemId, entry)] : [];
+    const item = byId.get(ref.itemId);
+    const entry = item?.history.find((e) => e.id === ref.entryId);
+    return item && entry ? [toRow(item, entry)] : [];
   });
 
-  const softDelete = (queue.entryDeletes ?? []).filter((ref) => !deleting.has(ref.itemId));
+  const softDelete = (queue.entryDeletes ?? [])
+    .filter((ref) => !deleting.has(ref.itemId))
+    .map((ref) => {
+      const ownerId = byId.get(ref.itemId)?.ownerId;
+      return ownerId ? { ...ref, ownerId } : ref;
+    });
 
   return { insertOnly, overwrite, softDelete };
 }
@@ -321,7 +341,7 @@ export async function runSync(ports: SyncPorts): Promise<SyncOutcome> {
     }
 
     if (pushing.deletes.length > 0) {
-      await ports.cloudDeleteMany(pushing.deletes);
+      await ports.cloudDeleteMany(pushing.deletes, pushing.deleteMeta);
     }
 
     const [cloudItems, tombstones] = await Promise.all([
@@ -343,7 +363,7 @@ export async function runSync(ports: SyncPorts): Promise<SyncOutcome> {
       const alreadySent = new Set(pushing.upserts);
       const backfill = itemsAtPush
         .filter((i) => inCloud.has(i.id) && !alreadySent.has(i.id))
-        .flatMap((i) => i.history.map((e) => toRow(i.id, e)));
+        .flatMap((i) => i.history.map((e) => toRow(i, e)));
       if (backfill.length > 0) {
         await ports.cloudPushEntries({ insertOnly: backfill, overwrite: [], softDelete: [] });
       }

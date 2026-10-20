@@ -34,6 +34,8 @@ import {
 } from './history';
 
 import { toBackup, readBackup, planRestore, describeRestore } from '../backup/backup';
+import { loadHouseholdState } from '../household/store';
+import { canChangeSharing, canDelete } from '../household/rules';
 
 export { canUndoDone } from './undo';
 export { BackupError } from '../backup/backup';
@@ -120,6 +122,7 @@ export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
     repeatUnit: input.repeatUnit,
     createdAt: now,
     updatedAt: now,
+    ...(input.householdId ? { householdId: input.householdId } : {}),
   };
   const existing = await loadItems();
   await saveItems([...existing, item]);
@@ -141,6 +144,15 @@ export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
  */
 export async function updateItem(itemId: string, updates: UpdateItemInput): Promise<DerivedItem> {
   const { items, existing } = await loadOne(itemId);
+  // The server refuses a sharing change from anyone but the item's creator
+  // (004_households.sql); refused here so it never sits in the sync queue.
+  if (
+    updates.householdId !== undefined &&
+    (updates.householdId ?? null) !== (existing.householdId ?? null) &&
+    !canChangeSharing(existing, await loadHouseholdState())
+  ) {
+    throw new Error('Only the person who added this can change who it is for.');
+  }
   const now = new Date().toISOString();
   const { lastDoneDate, ...fields } = updates;
 
@@ -244,11 +256,20 @@ export async function undoMarkDone(
 export async function deleteItem(itemId: string): Promise<SinceItem | null> {
   const items = await loadItems();
   const deleted = items.find((i) => i.id === itemId) ?? null;
+  // Someone else's shared item can only be deleted by the household's owner
+  if (deleted && !canDelete(deleted, await loadHouseholdState())) {
+    throw new Error('Only the person who added this, or the household owner, can delete it.');
+  }
   const remaining = items.filter((i) => i.id !== itemId);
   await saveItems(remaining);
   await rescheduleAllNotifications(remaining);
 
-  await enqueueDelete(itemId);
+  await enqueueDelete(
+    itemId,
+    deleted && (deleted.ownerId || deleted.householdId)
+      ? { ownerId: deleted.ownerId, householdId: deleted.householdId }
+      : undefined,
+  );
   syncInBackground();
 
   return deleted;
@@ -259,7 +280,10 @@ export async function deleteItem(itemId: string): Promise<SinceItem | null> {
  * tombstoned once the delete syncs — see copyForRestore).
  */
 export async function restoreDeletedItem(item: SinceItem): Promise<DerivedItem> {
-  const restored = copyForRestore(item, generateId(), new Date().toISOString());
+  // Back under this account (a new id needs a new row, and only its own
+  // rows can be added), still shared if it was.
+  const { ownerId: _previousOwner, ...mine } = item;
+  const restored = copyForRestore(mine, generateId(), new Date().toISOString());
   const items = await loadItems();
   const all = [...items, restored];
   await saveItems(all);
@@ -311,4 +335,9 @@ export async function applyRestore(backup: SinceItem[]): Promise<void> {
   }
   syncInBackground();
   notifyItemsChanged();
+}
+
+/** Reschedule every reminder (after "Remind me about this" changes). */
+export async function refreshReminders(): Promise<void> {
+  await rescheduleAllNotifications(await loadItems());
 }

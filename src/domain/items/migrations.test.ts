@@ -233,3 +233,36 @@ describe('entries synced one by one (sync plan, PR 3)', () => {
     assert.equal(loaded[0].lastDoneDate, '2026-10-10');
   });
 });
+
+describe('households (sync plan, PR 6)', () => {
+  // Shared items carry an owner and household, and entries who did them.
+  // All optional: lists saved before load as they were, and older builds
+  // ignore the new fields.
+  test('a shared item, with its owner, household and "done by", loads unchanged', () => {
+    const shared = {
+      ...base,
+      id: 'bins',
+      name: 'Bins',
+      category: 'Household',
+      lastDoneDate: '2026-10-05',
+      history: [
+        { id: 'e2', date: '2026-10-05', createdBy: 'user-sam' },
+        { id: 'e1', date: '2026-10-01' },
+      ],
+      repeatValue: 1,
+      repeatUnit: 'weeks',
+      ownerId: 'user-sam',
+      householdId: 'household-home',
+    };
+    assert.deepEqual(parseAndMigrate(toEnvelope([shared] as never)), [shared]);
+  });
+
+  test('an item saved before households has none of the new fields after loading', () => {
+    const [old] = parseAndMigrate(JSON.stringify({
+      version: 3,
+      items: [{ ...base, id: 'a', name: 'A', category: 'Other', lastDoneDate: '2026-01-01', history: [{ id: 'e', date: '2026-01-01' }], repeatValue: null, repeatUnit: null }],
+    }));
+    assert.equal('ownerId' in old, false);
+    assert.equal('householdId' in old, false);
+  });
+});

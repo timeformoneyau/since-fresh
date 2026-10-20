@@ -24,7 +24,10 @@ import {
 } from '../items/cloudStorage';
 import { loadCursor, saveCursor, clearCursor } from './cursor';
 import { isCloudSyncConfigured, getSupabase } from '../../lib/supabase';
-import { loadQueue, removeFromQueue, enqueueUpsert, clearQueue } from './queue';
+import { loadQueue, removeFromQueue, enqueueUpsert, clearQueue, forgetQueuedItems } from './queue';
+import { fetchHousehold, fetchSharedItemKeys } from '../household/cloud';
+import { loadHouseholdState, saveHouseholdState, clearHouseholdState } from '../household/store';
+import { householdChange, afterLeaving, noLongerShared } from '../household/rules';
 import { loadOwner, saveOwner, clearOwner } from './owner';
 import {
   rescheduleAllNotifications,
@@ -119,10 +122,53 @@ async function afterSync(outcome: SyncOutcome): Promise<void> {
 /** Guards against overlapping runs — mutations can fire this rapidly. */
 let inFlight: Promise<SyncOutcome> | null = null;
 
+/** Take items off this phone (they're no longer this account's to see), with their queued changes. */
+async function dropItems(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const gone = new Set(ids);
+  await saveItems((await loadItems()).filter((i) => !gone.has(i.id)));
+  await forgetQueuedItems(ids);
+}
+
+/**
+ * Before each sync: look at the household again and apply what changed
+ * (household/rules.ts). Leaving takes the household's items off this phone;
+ * joining pulls everything again; an item its creator made personal again
+ * goes from the other members' phones. Offline, the last known household
+ * stays. Only for the account that owns the local list.
+ */
+async function refreshHousehold(): Promise<void> {
+  const userId = await sessionUserId().catch(() => null);
+  if (!userId || (await loadOwner()) !== userId) return;
+  try {
+    const before = await loadHouseholdState();
+    const { household, mutes } = await fetchHousehold();
+    const change = householdChange(before, userId, household);
+    if (change.left) {
+      const items = await loadItems();
+      const kept = new Set(afterLeaving(items, change.left).map((i) => i.id));
+      await dropItems(items.filter((i) => !kept.has(i.id)).map((i) => i.id));
+    }
+    if (household) {
+      await dropItems(noLongerShared(await loadItems(), household.id, await fetchSharedItemKeys(household.id), userId));
+    }
+    if (change.pullEverything) await clearCursor();
+    await saveHouseholdState({ userId, household, mutes });
+  } catch {
+    // Offline, or households not set up on the server yet (migration 004):
+    // keep what's known. A household from another account is never kept.
+    const before = await loadHouseholdState();
+    if (before.userId !== userId) await saveHouseholdState({ userId, household: null, mutes: [] });
+  }
+}
+
 export async function syncNow(): Promise<SyncOutcome> {
   if (inFlight) return inFlight;
 
-  inFlight = runSync(ports).then(async (outcome) => {
+  inFlight = (async () => {
+    if (isCloudSyncConfigured()) await refreshHousehold();
+    return runSync(ports);
+  })().then(async (outcome) => {
     await afterSync(outcome);
     return outcome;
   });
@@ -149,6 +195,7 @@ async function clearLocalData(): Promise<void> {
   await clearItems();
   await clearQueue();
   await clearCursor();
+  await clearHouseholdState();
   await clearLastSyncedAt();
   await cancelAllReminders();
 }

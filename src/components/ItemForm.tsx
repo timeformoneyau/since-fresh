@@ -28,6 +28,8 @@ export interface ItemFormValues {
   lastDoneDate: string;
   repeatValue: number | null;
   repeatUnit: RepeatUnit | null;
+  /** Shared with the household (only offered when there is one). */
+  shared?: boolean;
 }
 
 interface Props {
@@ -44,6 +46,8 @@ interface Props {
   onSubmit: (values: ItemFormValues) => void;
   /** Extra content under the main button (Edit: delete). */
   footer?: React.ReactNode;
+  /** Offer "Who is this for?" (households): the household's name. */
+  householdName?: string;
 }
 
 function yesterdayString(): string {
@@ -63,6 +67,7 @@ export default function ItemForm({
   autoFocusName,
   onSubmit,
   footer,
+  householdName,
 }: Props) {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -72,6 +77,7 @@ export default function ItemForm({
   const [category, setCategory] = useState(initial.category);
   const [lastDoneDate, setLastDoneDate] = useState(initial.lastDoneDate);
   const [repeats, setRepeats] = useState(initial.repeatValue !== null);
+  const [shared, setShared] = useState(initial.shared ?? false);
   const [repeatValue, setRepeatValue] = useState(initial.repeatValue ?? 30);
   const [repeatUnit, setRepeatUnit] = useState<RepeatUnit>(initial.repeatUnit ?? 'days');
   const [intervalTouched, setIntervalTouched] = useState(false);
@@ -116,6 +122,7 @@ export default function ItemForm({
       lastDoneDate,
       repeatValue: repeats ? repeatValue : null,
       repeatUnit: repeats ? repeatUnit : null,
+      ...(householdName !== undefined ? { shared } : {}),
     });
   }
 
@@ -147,6 +154,33 @@ export default function ItemForm({
             accessibilityLabel="Name"
           />
         </View>
+
+        {/* Who is this for? (households) */}
+        {householdName !== undefined && (
+          <View style={styles.card}>
+            <Text style={styles.heading}>Who is this for?</Text>
+            <View style={styles.options} accessibilityRole="radiogroup">
+              <Option
+                testID={`${prefix}-justme-option`}
+                selected={!shared}
+                onPress={() => setShared(false)}
+                icon="account-outline"
+                tileBg={palette.infoBg}
+                title="Just me"
+                caption="Only you see it"
+              />
+              <Option
+                testID={`${prefix}-household-option`}
+                selected={shared}
+                onPress={() => setShared(true)}
+                icon="home-outline"
+                tileBg="#D7ECF2"
+                title="Household"
+                caption={`Shared with ${householdName}`}
+              />
+            </View>
+          </View>
+        )}
 
         {/* 2. Does it repeat? */}
         <View style={styles.card}>

@@ -28,6 +28,8 @@ import ItemCard from '../components/ItemCard';
 import { useToast } from '../components/Toast';
 import SystemStatus from '../components/SystemStatus';
 import LogoMark from '../components/LogoMark';
+import { useHousehold } from '../components/useHousehold';
+import { filterItems, canDelete, type ListFilter } from '../domain/household/service';
 import { colours, palette, fonts, type, radius, space, TAP } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
@@ -42,7 +44,11 @@ export default function MainListScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<DerivedItem[]>([]);
+  const [filter, setFilter] = useState<ListFilter>('all');
+  const household = useHousehold();
   const showToast = useToast();
+  // The filter only exists while in a household
+  const shown = household.household ? filterItems(items, filter) : items;
 
   const refresh = useCallback(async () => {
     setItems(await getDerivedItems());
@@ -197,14 +203,32 @@ export default function MainListScreen() {
     <View style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={palette.navy} />
       <FlatList<DerivedItem>
-        data={sortItems(items) as DerivedItem[]}
+        data={sortItems(shown) as DerivedItem[]}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
           <>
             {header}
             <View style={styles.summaryOverlap}>
-              <SystemStatus items={items} />
+              <SystemStatus items={shown} />
             </View>
+            {household.household && (
+              <View style={styles.filterRow} accessibilityRole="tablist">
+                {(['all', 'mine', 'household'] as const).map((f) => (
+                  <TouchableOpacity
+                    key={f}
+                    style={[styles.filterChip, filter === f && styles.filterChipOn]}
+                    onPress={() => setFilter(f)}
+                    testID={`main-filter-${f}`}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: filter === f }}
+                  >
+                    <Text style={[styles.filterText, filter === f && styles.filterTextOn]}>
+                      {f === 'all' ? 'All' : f === 'mine' ? 'Just me' : 'Household'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </>
         }
         renderItem={({ item }) => (
@@ -212,7 +236,7 @@ export default function MainListScreen() {
             item={item}
             onMarkDone={handleMarkDone}
             onEdit={handleEdit}
-            onDelete={handleDelete}
+            onDelete={canDelete(item, household) ? handleDelete : undefined}
             onPress={handleOpenDetail}
           />
         )}
@@ -224,6 +248,22 @@ export default function MainListScreen() {
 }
 
 const styles = StyleSheet.create({
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginHorizontal: space.screen,
+    marginBottom: space.cardGap,
+  },
+  filterChip: {
+    minHeight: 36,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    justifyContent: 'center',
+    backgroundColor: palette.infoBg,
+  },
+  filterChipOn: { backgroundColor: palette.navy },
+  filterText: { fontFamily: fonts.semibold, fontSize: 13, color: palette.navy },
+  filterTextOn: { color: '#fff' },
   safe: {
     flex: 1,
     backgroundColor: colours.background,
