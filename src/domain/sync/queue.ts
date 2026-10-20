@@ -2,36 +2,38 @@
  * Pending-operation queue for local-first sync.
  *
  * Every mutation writes to AsyncStorage first and records its intent here.
- * The queue drains opportunistically (see engine.ts). It is deliberately
+ * The queue drains opportunistically (see engine.ts). Item operations are
  * id-based rather than payload-based: when we finally push, we send whatever
  * the item looks like *now*, so a queue that backed up over several offline
- * edits still results in one correct upsert.
+ * edits still results in one correct upsert. History entries are recorded one
+ * by one; the rules are in queueOps.ts.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  SyncQueue,
+  EntryRef,
+  EMPTY_QUEUE,
+  readQueue,
+  withUpsert,
+  withDelete,
+  withEntryUpsert,
+  withEntryDelete,
+  withoutPushed,
+  isEmpty,
+} from './queueOps';
+
+export type { SyncQueue, EntryRef } from './queueOps';
 
 const QUEUE_KEY = '@since_sync_queue_v1';
-
-export interface SyncQueue {
-  /** Item ids created or modified locally and not yet pushed. */
-  upserts: string[];
-  /** Item ids deleted locally and not yet pushed. */
-  deletes: string[];
-}
-
-const EMPTY: SyncQueue = { upserts: [], deletes: [] };
 
 export async function loadQueue(): Promise<SyncQueue> {
   try {
     const raw = await AsyncStorage.getItem(QUEUE_KEY);
-    if (!raw) return { ...EMPTY };
-    const parsed = JSON.parse(raw) as Partial<SyncQueue>;
-    return {
-      upserts: Array.isArray(parsed.upserts) ? parsed.upserts : [],
-      deletes: Array.isArray(parsed.deletes) ? parsed.deletes : [],
-    };
+    if (!raw) return { ...EMPTY_QUEUE };
+    return readQueue(JSON.parse(raw));
   } catch {
-    return { ...EMPTY };
+    return { ...EMPTY_QUEUE };
   }
 }
 
@@ -40,25 +42,18 @@ async function saveQueue(q: SyncQueue): Promise<void> {
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(q));
   } catch {
     // Queue persistence is best-effort. A lost queue costs one sync cycle,
-    // not data: the full-state pull reconciles anything missed.
+    // not data: the first sync after it re-sends every entry (runSync.ts).
   }
 }
 
-export async function enqueueUpsert(id: string): Promise<void> {
-  const q = await loadQueue();
-  if (!q.upserts.includes(id)) q.upserts.push(id);
-  // A recreated id is no longer deleted.
-  q.deletes = q.deletes.filter((d) => d !== id);
-  await saveQueue(q);
+async function update(change: (q: SyncQueue) => SyncQueue): Promise<void> {
+  await saveQueue(change(await loadQueue()));
 }
 
-export async function enqueueDelete(id: string): Promise<void> {
-  const q = await loadQueue();
-  if (!q.deletes.includes(id)) q.deletes.push(id);
-  // Delete supersedes any pending upsert for the same id.
-  q.upserts = q.upserts.filter((u) => u !== id);
-  await saveQueue(q);
-}
+export const enqueueUpsert = (id: string) => update((q) => withUpsert(q, id));
+export const enqueueDelete = (id: string) => update((q) => withDelete(q, id));
+export const enqueueEntryUpsert = (ref: EntryRef) => update((q) => withEntryUpsert(q, ref));
+export const enqueueEntryDelete = (ref: EntryRef) => update((q) => withEntryDelete(q, ref));
 
 /**
  * Retire only the operations that were actually pushed.
@@ -68,21 +63,12 @@ export async function enqueueDelete(id: string): Promise<void> {
  * it with no retry. Removing by id leaves those entries queued for the next
  * run.
  */
-export async function removeFromQueue(ops: SyncQueue): Promise<void> {
-  const q = await loadQueue();
-  const doneUpserts = new Set(ops.upserts);
-  const doneDeletes = new Set(ops.deletes);
-  await saveQueue({
-    upserts: q.upserts.filter((id) => !doneUpserts.has(id)),
-    deletes: q.deletes.filter((id) => !doneDeletes.has(id)),
-  });
-}
+export const removeFromQueue = (ops: Partial<SyncQueue>) => update((q) => withoutPushed(q, ops));
 
 export async function clearQueue(): Promise<void> {
-  await saveQueue({ ...EMPTY });
+  await saveQueue({ ...EMPTY_QUEUE });
 }
 
 export async function hasPending(): Promise<boolean> {
-  const q = await loadQueue();
-  return q.upserts.length > 0 || q.deletes.length > 0;
+  return !isEmpty(await loadQueue());
 }

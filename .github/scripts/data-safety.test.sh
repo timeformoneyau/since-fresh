@@ -45,6 +45,9 @@ expect 1 supabase/migrations/003_history_table.sql
 expect 0 supabase/migrations/003_history_table.sql supabase/tests/access_rules.test.sql
 # ...but a SQL test doesn't stand in for app sync code
 expect 1 src/domain/sync/engine.ts supabase/tests/access_rules.test.sql
+# Service changes can be covered by a Jest test beside the service
+expect 0 src/domain/items/service.ts src/domain/items/__tests__/syncQueue.ui.test.tsx
+expect 1 src/domain/items/service.ts src/screens/__tests__/journeys.ui.test.tsx
 # Test tooling on its own is not sensitive
 expect 0 supabase/tests/run.sh
 

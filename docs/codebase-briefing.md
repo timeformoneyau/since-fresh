@@ -204,9 +204,13 @@ go through `domain/items/service.ts`, the one place that keeps persistence and s
 
 - **Old proxy secret is in this repo's public git history.** No longer used by this app, but
   rotate it on `since-proxy` (which UseBy now uses) if that hasn't been done.
-- **Sync is item-level last-write-wins.** Two devices editing different fields of the same item
-  inside one sync window will keep only the later edit. Fine for single-user; revisit if sharing
-  is added.
+- **How sync resolves conflicts** (`domain/sync/runSync.ts`). History entries sync one by one
+  (`completion_events`, migration 003), so two phones marking the same item done both keep their
+  entries, and a deleted entry is soft deleted and goes everywhere. Item fields: a change still to
+  push from this phone wins, otherwise the cloud's copy; the last phone to push a field change wins
+  it. Pulls fetch only rows changed since a per-account cursor, by the server's change time; phone
+  clocks are never compared. Marking done doesn't push the item's fields, so the old
+  `items.history` copy in the cloud (kept for older builds) only updates on field edits.
 - **Supabase is configured** (`extra.supabaseUrl` / publishable `extra.supabaseAnonKey` in
   `app.json`; schema in `supabase/schema.sql`). Nothing in the repo records the auth + sync path
   being exercised end-to-end on a device against that project.

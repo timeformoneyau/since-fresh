@@ -37,10 +37,12 @@ CODE=(
   '^supabase/(schema\.sql|migrations/)'
   '^src/domain/auth/|^src/lib/supabase\.ts$'
 )
-# The schema's own tests run the SQL on Postgres (supabase/tests/run.sh)
+# The schema's own tests run the SQL on Postgres (supabase/tests/run.sh).
+# Service tests that need AsyncStorage run under Jest, beside the service
+# (src/domain/items/__tests__/).
 TESTS=(
   '^src/domain/items/migrations\.test\.ts$'
-  '^src/domain/items/[^/]+\.test\.ts$'
+  '^src/domain/items/[^/]+\.test\.ts$|^src/domain/items/__tests__/[^/]+\.ui\.test\.tsx$'
   '^src/domain/(sync/[^/]+|items/migrations)\.test\.ts$'
   '^supabase/tests/[^/]+\.test\.sql$|^src/domain/(sync/[^/]+|items/migrations)\.test\.ts$'
   '^src/domain/(auth/[^/]+|items/migrations)\.test\.ts$'

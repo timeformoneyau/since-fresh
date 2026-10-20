@@ -86,6 +86,11 @@ function phone(opts: { owner: string | null; local: SinceItem[]; signedIn: strin
     cloudDeleteMany: async () => {},
     cloudLoadItems: async () => [...cloudFor(state.signedIn)],
     cloudLoadTombstones: async () => [],
+    // History entries and the pull cursor are covered in entries.test.ts
+    cloudPushEntries: async () => {},
+    cloudLoadEntries: async () => [],
+    loadCursor: async () => null,
+    saveCursor: async () => {},
     afterMerge: async (items) => { state.reminders = items.length; },
     classifyError: classifySyncError,
   };
