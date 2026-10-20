@@ -11,7 +11,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifySyncError } from './classify.ts';
-import { runSync, mergeItems, type SyncPorts, type QueueSnapshot } from './runSync.ts';
+import { runSync, mergeItems, pendingFrom, type SyncPorts, type QueueSnapshot } from './runSync.ts';
 import type { SinceItem } from '../../types/index.ts';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -81,6 +81,11 @@ function harness(opts: { pushLatencyMs?: number } = {}) {
     },
     cloudLoadItems: async () => clone(state.cloud),
     cloudLoadTombstones: async () => clone(state.tombstones),
+    // History entries and the pull cursor are covered in entries.test.ts
+    cloudPushEntries: async () => {},
+    cloudLoadEntries: async () => [],
+    loadCursor: async () => null,
+    saveCursor: async () => {},
     afterMerge: async (items) => { state.rescheduledWith = clone(items); },
     classifyError: classifySyncError,
   };
@@ -223,9 +228,19 @@ describe('mergeItems — conflict rules', () => {
   const A_old = item('a', '2026-08-01T00:00:00.000Z');
   const A_new = item('a', '2026-08-02T00:00:00.000Z');
 
-  test('the later updatedAt wins, whichever side it is on', () => {
-    assert.deepEqual(mergeItems([A_new], [A_old], new Set()).map((i) => i.updatedAt), [A_new.updatedAt]);
-    assert.deepEqual(mergeItems([A_old], [A_new], new Set()).map((i) => i.updatedAt), [A_new.updatedAt]);
+  // Phones' clocks are never compared (sync plan, PR 3): a change still to
+  // push from this phone wins, otherwise the cloud's copy does.
+  test("the cloud's fields win when nothing is pending here, whatever the clocks say", () => {
+    const local = { ...A_new, name: 'Local name' };
+    const cloud = { ...A_old, name: 'Cloud name' };
+    assert.deepEqual(mergeItems([local], [cloud], new Set()).map((i) => i.name), ['Cloud name']);
+  });
+
+  test("a change still to push from this phone wins, whatever the clocks say", () => {
+    const local = { ...A_old, name: 'Local name' };
+    const cloud = { ...A_new, name: 'Cloud name' };
+    const pending = pendingFrom({ upserts: ['a'], deletes: [] });
+    assert.deepEqual(mergeItems([local], [cloud], new Set(), [], pending).map((i) => i.name), ['Local name']);
   });
 
   test('equal timestamps do not flap', () => {

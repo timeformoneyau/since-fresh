@@ -9,6 +9,7 @@
 
 import { SinceItem, CompletionEvent, RepeatUnit } from '../../types';
 import { requireSupabase } from '../../lib/supabase';
+import type { CloudItem, CloudEntry, EntryPush, EntryRow } from '../sync/runSync';
 
 interface ItemRow {
   id: string;
@@ -21,9 +22,22 @@ interface ItemRow {
   repeat_unit: string | null;
   created_at: string;
   updated_at: string;
+  /** Set by the database (migration 003); never sent. */
+  server_updated_at?: string;
 }
 
-function rowToItem(row: ItemRow): SinceItem {
+interface EntryDbRow {
+  user_id: string;
+  item_id: string;
+  id: string;
+  date: string;
+  note: string | null;
+  created_at?: string;
+  deleted_at?: string | null;
+  server_updated_at?: string;
+}
+
+function rowToItem(row: ItemRow): CloudItem {
   return {
     id: row.id,
     name: row.name,
@@ -34,7 +48,59 @@ function rowToItem(row: ItemRow): SinceItem {
     repeatUnit: row.repeat_unit as RepeatUnit | null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    ...(row.server_updated_at ? { serverUpdatedAt: row.server_updated_at } : {}),
   };
+}
+
+function rowToEntry(row: EntryDbRow): CloudEntry {
+  return {
+    itemId: row.item_id,
+    id: row.id,
+    date: row.date,
+    note: row.note,
+    createdAt: row.created_at ?? null,
+    deletedAt: row.deleted_at ?? null,
+    serverUpdatedAt: row.server_updated_at ?? '',
+  };
+}
+
+function entryToRow(e: EntryRow, userId: string): EntryDbRow {
+  return {
+    user_id: userId,
+    item_id: e.itemId,
+    id: e.id,
+    date: e.date,
+    note: e.note,
+    ...(e.createdAt ? { created_at: e.createdAt } : {}),
+  };
+}
+
+/**
+ * Pulls start a little before the cursor: a row written in a transaction that
+ * began earlier can commit with an earlier change time than one already seen.
+ * Rows pulled twice merge the same way, so the overlap costs nothing.
+ */
+const PULL_OVERLAP_MS = 2 * 60_000;
+const PAGE = 1000; // PostgREST's default row limit
+
+function pullFrom(since: string | null): string | null {
+  if (!since) return null;
+  const t = Date.parse(since);
+  return Number.isNaN(t) ? null : new Date(t - PULL_OVERLAP_MS).toISOString();
+}
+
+/** Every row a query returns, a page at a time. */
+async function allPages<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await page(from, from + PAGE - 1);
+    if (error) throw error;
+    const batch = (data ?? []) as T[];
+    rows.push(...batch);
+    if (batch.length < PAGE) return rows;
+  }
 }
 
 function itemToRow(item: SinceItem, userId: string): ItemRow {
@@ -61,13 +127,73 @@ export async function currentUserId(): Promise<string> {
   return user.id;
 }
 
-export async function cloudLoadItems(): Promise<SinceItem[]> {
-  const { data, error } = await requireSupabase()
-    .from('items')
-    .select('*')
-    .order('created_at', { ascending: true });
-  if (error) throw error;
-  return (data as ItemRow[]).map(rowToItem);
+/** Items changed since `since` (by the server's change time), or all of them. */
+export async function cloudLoadItems(since: string | null = null): Promise<CloudItem[]> {
+  const from = pullFrom(since);
+  const rows = await allPages<ItemRow>((a, b) => {
+    let q = requireSupabase().from('items').select('*');
+    if (from) q = q.gt('server_updated_at', from);
+    return q.order('server_updated_at', { ascending: true }).order('id').range(a, b);
+  });
+  return rows.map(rowToItem);
+}
+
+/** History entries changed since `since`, or all of them; optionally only for some items. */
+export async function cloudLoadEntries(
+  since: string | null = null,
+  itemIds?: string[],
+): Promise<CloudEntry[]> {
+  if (itemIds && itemIds.length === 0) return [];
+  const from = pullFrom(since);
+  const rows = await allPages<EntryDbRow>((a, b) => {
+    let q = requireSupabase()
+      .from('completion_events')
+      .select('item_id, id, date, note, created_at, deleted_at, server_updated_at');
+    if (from) q = q.gt('server_updated_at', from);
+    if (itemIds) q = q.in('item_id', itemIds);
+    return q.order('server_updated_at', { ascending: true }).order('item_id').order('id').range(a, b);
+  });
+  return rows.map(rowToEntry);
+}
+
+/**
+ * Send history entry changes. Insert-only rows never overwrite the cloud's
+ * copy; overwrites change date and note but can't bring back an entry
+ * another phone deleted (deleted_at isn't sent). Item rows must be pushed
+ * first: an entry needs its item.
+ */
+export async function cloudPushEntries(push: EntryPush): Promise<void> {
+  const { insertOnly, overwrite, softDelete } = push;
+  if (insertOnly.length + overwrite.length + softDelete.length === 0) return;
+  const supabase = requireSupabase();
+  const userId = await currentUserId();
+  const onConflict = 'user_id,item_id,id';
+
+  if (insertOnly.length > 0) {
+    const { error } = await supabase
+      .from('completion_events')
+      .upsert(insertOnly.map((e) => entryToRow(e, userId)), { onConflict, ignoreDuplicates: true });
+    if (error) throw error;
+  }
+  if (overwrite.length > 0) {
+    const { error } = await supabase
+      .from('completion_events')
+      .upsert(overwrite.map((e) => entryToRow(e, userId)), { onConflict });
+    if (error) throw error;
+  }
+
+  const byItem = new Map<string, string[]>();
+  for (const r of softDelete) byItem.set(r.itemId, [...(byItem.get(r.itemId) ?? []), r.entryId]);
+  for (const [itemId, ids] of byItem) {
+    const { error } = await supabase
+      .from('completion_events')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('item_id', itemId)
+      .in('id', ids)
+      .is('deleted_at', null);
+    if (error) throw error;
+  }
 }
 
 export async function cloudUpsertMany(items: SinceItem[]): Promise<void> {
