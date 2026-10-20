@@ -18,11 +18,98 @@ import { hasPending } from '../domain/sync/queue';
 import { loadLastSyncedAt } from '../domain/sync/lastSynced';
 import { describeLastBackup, describeSyncOutcome } from '../domain/sync/backupStatus';
 import { friendlyAuthError } from '../domain/auth/errors';
+import { exportBackup, previewRestore, applyRestore, BackupError } from '../domain/items/service';
+import { BACKUP_COPY } from '../domain/backup/backup';
+import { shareBackupFile, pickBackupFile } from '../domain/backup/files';
+import { isCloudSyncConfigured } from '../lib/supabase';
+import { todayString } from '../utils/dateUtils';
+import { useToast } from '../components/Toast';
 import { colours, fonts } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Account'>;
 
-/** Signed in: backup status and account actions. Signed out: an invitation to back up. */
+/**
+ * Backup to a file and restore, with or without an account (sync plan, PR 4).
+ * Restoring adds what's missing and never replaces (domain/backup/backup.ts).
+ */
+function BackupFileSection() {
+  const showToast = useToast();
+  const [busy, setBusy] = useState(false);
+
+  async function handleExport() {
+    setBusy(true);
+    try {
+      await shareBackupFile(await exportBackup(), todayString());
+    } catch {
+      Alert.alert("Couldn't make a backup", 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRestore() {
+    setBusy(true);
+    try {
+      const raw = await pickBackupFile();
+      if (raw === null) return;
+      const { backup, message } = await previewRestore(raw);
+      if (!message) {
+        Alert.alert('Restore from a backup', BACKUP_COPY.nothingNew);
+        return;
+      }
+      Alert.alert('Restore from a backup', message, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Add',
+          onPress: async () => {
+            try {
+              await applyRestore(backup);
+              showToast({ message: 'Added to your list.' });
+            } catch {
+              Alert.alert("Couldn't restore", 'Nothing was changed. Please try again.');
+            }
+          },
+        },
+      ]);
+    } catch (e) {
+      Alert.alert("Couldn't restore", e instanceof BackupError ? e.message : 'Nothing was changed. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.label}>Backup file</Text>
+      <Text style={styles.body}>
+        Save a copy of your list as a file, or add one back. Restoring only adds what's missing.
+      </Text>
+      <TouchableOpacity
+        style={[styles.rowButton, busy && styles.btnDisabled]}
+        testID="account-export-button"
+        onPress={handleExport}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.rowButtonText}>Export a backup</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.rowButton, busy && styles.btnDisabled]}
+        testID="account-restore-button"
+        onPress={handleRestore}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.rowButtonText}>Restore from a backup</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+/**
+ * Signed in: backup status and account actions. Signed out: an invitation to
+ * back up. Without cloud sync set up, just the backup file.
+ */
 export default function AccountScreen() {
   const navigation = useNavigation<Nav>();
   // undefined while loading, null when signed out
@@ -36,6 +123,10 @@ export default function AccountScreen() {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   const load = useCallback(() => {
+    if (!isCloudSyncConfigured()) {
+      setUser(null);
+      return;
+    }
     getSignedInUser()
       .then((u) => {
         setUser(u);
@@ -148,6 +239,7 @@ export default function AccountScreen() {
   if (user === null) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        {isCloudSyncConfigured() && (
         <View style={styles.section}>
           <Text style={styles.label}>Back up and sync</Text>
           {notice !== '' && <Text style={styles.body}>{notice}</Text>}
@@ -163,6 +255,8 @@ export default function AccountScreen() {
             <Text style={styles.rowButtonText}>Sign in or create an account</Text>
           </TouchableOpacity>
         </View>
+        )}
+        <BackupFileSection />
       </ScrollView>
     );
   }
@@ -192,6 +286,8 @@ export default function AccountScreen() {
         </TouchableOpacity>
         {syncNote !== '' && <Text style={styles.note}>{syncNote}</Text>}
       </View>
+
+      <BackupFileSection />
 
       <View style={styles.section}>
         <Text style={styles.label}>Account</Text>

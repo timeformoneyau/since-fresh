@@ -1,0 +1,16 @@
+appId: com.since.app
+name: Backup screen opens from the list, with Export and Restore
+# Test builds are local-only, so this is the no-account backup screen. The
+# share sheet and file picker belong to Android, not the app, so the flow
+# stops at the buttons; component tests cover what they do.
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "main-account-button"
+- assertVisible:
+    id: "account-export-button"
+- assertVisible:
+    id: "account-restore-button"
+- takeScreenshot: 11-backup-screen
+- assertNotVisible:
+    id: "account-sign-in-button"

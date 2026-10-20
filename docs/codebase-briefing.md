@@ -106,8 +106,10 @@ This wording is central to the product's voice.
 ## 6. Screens & navigation (`App.tsx`)
 
 One stack, `AppNavigator`: `Main`, `Add`, `Edit`, `Detail`, `EditEntry`, `Account`, `SignIn`,
-`EnterCode`, `ChangeEmail`. Signing in is optional: the list always opens first, and `Account`
-(shown when cloud sync is configured) offers "Back up and sync". Sign-in is by emailed code only,
+`EnterCode`, `ChangeEmail`. Signing in is optional: the list always opens first. `Account` (titled
+"Backup" in a local-only build) offers "Back up and sync" when cloud sync is configured, and always
+offers a backup file: export a JSON file through the share sheet, or restore one, which only adds
+what's missing (`domain/backup/backup.ts`). Sign-in is by emailed code only,
 no passwords (`domain/auth/codes.ts`); the same code creates an account for a new address.
 
 - **Main** (`MainListScreen`) — items grouped into per-category `SectionList` sections. Grouping

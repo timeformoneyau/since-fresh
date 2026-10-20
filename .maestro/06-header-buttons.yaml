@@ -2,7 +2,7 @@ appId: com.since.app
 name: Main list header ＋ is tappable (not under the status bar)
 # Maestro can't measure positions, so this checks the effect: if the header
 # sat under the status bar, Android would take the tap and Add wouldn't open.
-# (Account only shows with cloud sync set up; test builds are local-only.)
+# (In local-only test builds the person button opens the backup screen; flow 11.)
 ---
 - runFlow: subflows/launch.yaml
 - runFlow:

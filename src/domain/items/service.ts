@@ -33,7 +33,10 @@ import {
   sortNewestFirst,
 } from './history';
 
+import { toBackup, readBackup, planRestore, describeRestore } from '../backup/backup';
+
 export { canUndoDone } from './undo';
+export { BackupError } from '../backup/backup';
 export { HistoryError, dateBounds, usualIntervalDays, gapsNewestFirst } from './history';
 
 type ItemsListener = () => void;
@@ -267,4 +270,45 @@ export async function restoreDeletedItem(item: SinceItem): Promise<DerivedItem> 
   notifyItemsChanged();
 
   return deriveItem(restored);
+}
+
+// ─── Backup files (domain/backup/backup.ts) ─────────────────────────────────
+
+/** The whole list as a backup file's contents. */
+export async function exportBackup(): Promise<string> {
+  return toBackup(await loadItems(), new Date().toISOString());
+}
+
+/**
+ * Read a backup file and work out what restoring it would add. Changes
+ * nothing. Throws BackupError, with a plain message, for a file that isn't a
+ * backup. Pass the returned backup to applyRestore.
+ */
+export async function previewRestore(raw: string): Promise<{ backup: SinceItem[]; message: string | null }> {
+  const backup = readBackup(raw);
+  const plan = planRestore(await loadItems(), backup, generateId, new Date().toISOString());
+  return { backup, message: describeRestore(plan) };
+}
+
+/**
+ * Add what's in a backup and missing here: new items, and missing entries on
+ * items already here. Never replaces anything. Worked out again against the
+ * list as it is now, in case it changed while the preview was showing.
+ * Recorded for sync like any change: new items whole, existing items by
+ * their added entries only.
+ */
+export async function applyRestore(backup: SinceItem[]): Promise<void> {
+  const items = await loadItems();
+  const plan = planRestore(items, backup, generateId, new Date().toISOString());
+  const changed = new Map(plan.extended.map((x) => [x.item.id, x.item]));
+  const all = [...items.map((i) => changed.get(i.id) ?? i), ...plan.added];
+  await saveItems(all);
+  await rescheduleAllNotifications(all);
+
+  for (const item of plan.added) await enqueueUpsert(item.id);
+  for (const { item, entryIds } of plan.extended) {
+    for (const entryId of entryIds) await enqueueEntryUpsert({ itemId: item.id, entryId });
+  }
+  syncInBackground();
+  notifyItemsChanged();
 }
