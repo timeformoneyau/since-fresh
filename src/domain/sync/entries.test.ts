@@ -15,6 +15,7 @@ import {
   mergeItems,
   entryPushFor,
   pendingFrom,
+  serverTimeMs,
   type SyncPorts,
   type CloudItem,
   type CloudEntry,
@@ -508,5 +509,28 @@ describe('the queue and households', () => {
     assert.deepEqual(after.upserts, ['mine']);
     assert.deepEqual(after.entryUpserts, []);
     assert.deepEqual(after.deletes, []);
+  });
+});
+
+describe('server change times', () => {
+  // Postgres gives microseconds; some JavaScript engines only read three
+  // decimal places, and a time they can't read would leave the cursor stuck.
+  test('times with microseconds, a space or a short offset are read to the millisecond', () => {
+    assert.equal(serverTimeMs('2026-10-20T02:44:12.123456+00:00'), Date.UTC(2026, 9, 20, 2, 44, 12, 123));
+    assert.equal(serverTimeMs('2026-10-20 02:44:12.5+00'), Date.UTC(2026, 9, 20, 2, 44, 12, 500));
+    assert.equal(serverTimeMs('2026-10-20T02:44:12Z'), Date.UTC(2026, 9, 20, 2, 44, 12));
+    assert.ok(Number.isNaN(serverTimeMs('not a time')));
+  });
+
+  test('the cursor moves to the latest time pulled, whatever its precision', async () => {
+    const cloud = fakeCloud();
+    const a = phone(cloud);
+    a.create(item('gutters'));
+    // A Postgres-style time, later than anything the fake clock produces
+    const late = '2026-10-21T00:00:00.654321+00:00';
+    const loadItems = cloud.loadItems;
+    cloud.loadItems = (since) => loadItems(since).map((i) => ({ ...i, serverUpdatedAt: late }));
+    await a.sync();
+    assert.equal(a.state.cursor?.items, late);
   });
 });

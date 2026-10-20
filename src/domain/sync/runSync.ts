@@ -262,10 +262,24 @@ export function entryPushFor(queue: QueueSnapshot, items: SinceItem[]): EntryPus
 /** Postgres: a row refers to one that doesn't exist (an entry without its item). */
 const FOREIGN_KEY_VIOLATION = '23503';
 
+/**
+ * A server change time in milliseconds. Postgres writes microseconds
+ * ("…12.123456+00:00"), and some JavaScript engines only read three decimal
+ * places, so the fraction is cut to milliseconds first. NaN if unreadable.
+ */
+export function serverTimeMs(ts: string): number {
+  const iso = ts
+    .trim()
+    .replace(' ', 'T')
+    .replace(/(\.\d{3})\d+/, '$1')
+    .replace(/([+-]\d{2})$/, '$1:00');
+  return Date.parse(iso);
+}
+
 const later = (a: string | null, b: string | undefined | null): string | null => {
-  if (!b) return a;
-  if (!a) return b;
-  return Date.parse(b) > Date.parse(a) ? b : a;
+  if (!b || Number.isNaN(serverTimeMs(b))) return a;
+  if (!a || Number.isNaN(serverTimeMs(a))) return b;
+  return serverTimeMs(b) > serverTimeMs(a) ? b : a;
 };
 
 /**

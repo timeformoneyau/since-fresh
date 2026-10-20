@@ -10,6 +10,7 @@
 import { SinceItem, CompletionEvent, RepeatUnit } from '../../types';
 import { requireSupabase } from '../../lib/supabase';
 import type { CloudItem, CloudEntry, EntryPush, EntryRow } from '../sync/runSync';
+import { serverTimeMs } from '../sync/runSync';
 
 interface ItemRow {
   id: string;
@@ -97,7 +98,7 @@ const PAGE = 1000; // PostgREST's default row limit
 
 function pullFrom(since: string | null): string | null {
   if (!since) return null;
-  const t = Date.parse(since);
+  const t = serverTimeMs(since);
   return Number.isNaN(t) ? null : new Date(t - PULL_OVERLAP_MS).toISOString();
 }
 
