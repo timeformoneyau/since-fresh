@@ -44,7 +44,9 @@ deferred, not ported.
 - **AsyncStorage** for persistence — the source of truth. Every write lands locally first and
   works offline. Keys: `@since_v1_items` (the list, storage version 3), `@since_sync_queue_v1`
   (changes waiting to sync), `@since_sync_cursor_v1`, `@since_last_synced_v1`, `@since_owner_v1`
-  (which account owns this phone's list), `@since_household_v1` (cached household).
+  (which account owns this phone's list), `@since_household_v1` (cached household),
+  `@since_snoozes_v1` (snoozes, this phone only), `@since_reminder_time_v1` (reminder time,
+  this phone only).
 - **Supabase** (`@supabase/supabase-js`) for the optional account (emailed code), sync and
   households. Absent credentials means the app runs purely local-only, with no sign-in.
 - **expo-notifications** for **local** (not push) reminders.
@@ -141,28 +143,36 @@ no passwords (`domain/auth/codes.ts`); the same code creates an account for a ne
   (`undoMarkDone` / `restoreDeletedItem` in `service.ts`; a restored item takes a new id
   because the old one is tombstoned in the cloud). A one-line `SystemStatus` summary sits under the header
   ("All good. Nothing needs attention." / "A few things might need attention." …). Header has
-  the Account button and **＋** (add). Empty state shows "Add something" and quick-start chips.
-  Opening the list (on focus) runs a sync.
+  the Account button and **＋** (add). Empty state shows "Add something" and a list of
+  **starters** (smoke alarm battery, dentist, car service, car rego, air-con filter, gutters,
+  pest inspection, eye test) from `suggestions.ts`: a tap opens Add filled in with the name,
+  category and usual gap; nothing is saved until "Track this". A snoozed card adds
+  "Snoozed until Tuesday" under its (unchanged) status. Opening the list (on focus) runs a
+  sync, and so does coming back to the app from the background (`useSyncOnResume`).
 - **Add** (`AddItemScreen`) and **Edit** (`EditItemScreen`) share `ItemForm`: name, "Who is
   this for?" (Just me / Household; only in a household, only for the item's creator), "Repeats"
   (every N days/weeks/months/years) or "Once off", last-done date, category. Add shows a keyword
   **suggestion** (`suggestions.ts`). Save buttons: "Track this" / "Save changes". Edit also has
   Delete (no confirm; Undo toast), offered only where the household rules allow it.
-- **Detail** (`DetailScreen`) — status card, "Mark done today", "Add a past entry", "Remind me
-  about this" switch (shared items), and the history; each entry shows "Done by {name}" on shared
+- **Detail** (`DetailScreen`) — status card, "Mark done today", **"Not yet"** (only when due
+  or overdue: snooze reminders for 3 days, 1 week or 1 month, with Undo), "Add a past entry",
+  "Remind me about this" switch (shared items), and the history; each entry shows "Done by {name}" on shared
   items and opens **EditEntry** (`EditHistoryEntryScreen`: change date or note, or delete).
-- **Account** — signed out: "Back up and sync" (→ `SignIn` → `EnterCode`). Signed in: email,
+- **Account** (titled "Settings" in a local-only build) — always: **Reminders** (the time of
+  day reminders come: 7 am, 8 am, 9 am (default), 12 pm, 6 pm or 8 pm). Signed out: "Back up and sync" (→ `SignIn` → `EnterCode`). Signed in: email,
   last backup and Sync now, the Household section (create / join via `HouseholdSetup`, invite
   and share the code, members, make owner, remove, leave, delete), change email, sign out
   (warns if changes haven't synced), delete account. Always: the backup file section.
 
 ---
 
-## 7. Notifications (`src/notifications/engine.ts`)
+## 7. Notifications (`src/notifications/plan.ts`, `engine.ts`, `scheduler.ts`)
 
 Stated design philosophy (in the code): **"a quiet, reliable system that only speaks up when it
-matters."** Local notifications only (no server push). Per repeating item, up to 3 lifecycle
-notifications fire at 9 AM:
+matters."** Local notifications only (no server push). What to schedule is worked out by
+`plan.ts`, which is pure and unit tested (`plan.test.ts`); `engine.ts` only cancels and
+schedules. Per repeating item, up to 3 lifecycle notifications fire at the **reminder time**
+(9 am unless changed in Account/Settings; kept on the phone):
 
 1. **Coming up** — interval-aware advance notice ("Dentist due in 7 days").
 2. **Due today** — "Dentist due today".
@@ -173,8 +183,20 @@ every 14 days, to avoid per-item noise. A hard cap of **2 notifications per cale
 resolved by priority (grouped > 7-day overdue > due today > coming up). Wording deliberately avoids
 appointment-style phrasing.
 
-Notifications recompute on app start, after any add/edit/done/delete and after every sync that
-changes items. Items the member muted (`item_mutes`) are skipped (`scheduler.ts`).
+**Snooze ("Not yet", `domain/snooze/`)**: a snoozed item sends nothing up to and including the
+day its snooze ends, and isn't counted in grouped notices on those days, so it takes no place in
+the cap. On the end day it sends one normal reminder ("Gutters overdue by 17 days", same
+priority as the 7-day one); after that the usual schedule (7-day overdue, grouped) carries on.
+A snooze only quiets reminders: due date, history, status and sort order are untouched. It is
+per person and kept on this phone only (`@since_snoozes_v1`, not synced, not in the backup
+file), so it doesn't follow you to a second phone. It is recorded against the item's
+last-done date and repeat: marking done (here or synced from another phone), changing the
+repeat, or deleting ends it; ended snoozes are pruned at every reschedule.
+
+Every change reschedules **everything** (there is no one-item reschedule), so the cap and the
+grouped counts always hold across items. Notifications recompute on app start, after any change
+and after every sync that changes items, and when the reminder time changes. Items the member
+muted (`item_mutes`) are skipped (`scheduler.ts`).
 
 > Expo Go (SDK 53+) prints a harmless console warning about push notifications. Local notifications
 > still work; the warning disappears in a real (EAS) build.
@@ -227,14 +249,20 @@ src/
   utils/
     dateUtils.ts          all date math (getNextDueDate, getDaysUntilDue, comingUpThreshold, …)
     statusUtils.ts        ⭐ computeItemStatus, sortItems, secondaryLine
-    suggestions.ts        keyword → repeat-interval rules (~10 English-only rules)
+    suggestions.ts        keyword → repeat-interval rules (14, English-only); the 8 starters come
+                          from the same table
+  domain/snooze/          rules.ts (pure: when offered, how long, when it ends), store.ts
   notifications/
-    engine.ts             ⭐ full scheduling logic + per-day cap + grouped overdue
-    scheduler.ts          public API, permissions, Android channel, skips muted items
+    plan.ts               ⭐ what to schedule and when: lifecycle, grouped overdue, snoozes,
+                             reminder time, per-day cap (pure, tested)
+    engine.ts             cancels and schedules the plan
+    scheduler.ts          public API, permissions, Android channel, skips muted items, prunes snoozes
+    reminderTime.ts, reminderTimeStore.ts   the one reminder time (default 9 am)
   screens/                MainList, AddItem, EditItem, Detail, EditHistoryEntry, Account,
                           ChangeEmail, HouseholdSetup, auth/SignIn, auth/EnterCode
   components/             ItemCard, ItemForm, SystemStatus, StatusChip, CategoryTile,
-                          DatePickerModal, Toast, HouseholdSection, useHousehold, LogoMark
+                          DatePickerModal, Toast, HouseholdSection, useHousehold, LogoMark,
+                          ReminderTimeSection, useSyncOnResume
   theme/tokens.ts         colours, type, spacing
   lib/supabase.ts         Supabase client (absent config → local-only)
 App.tsx                   navigation, startup (reschedule reminders), auth events
@@ -270,8 +298,9 @@ scheduling and sync in step.
   `items.history` copy in the cloud (kept for older builds) only updates on field edits.
 - **Deletes are final in the cloud** (tombstones). Undo-delete and backup restore bring an item
   back under a new id.
-- **Sync runs** when the list comes into view, on Sync now, and after household actions. Not
-  when the app returns from the background.
+- **Sync runs** when the list comes into view, on Sync now, after household actions, and when
+  the app returns from the background (at most once every 5 minutes after the last sync, quiet
+  unless a real error, which shows one calm line per session; `domain/sync/resume.ts`).
 - **Time zones:** entry dates are local calendar dates; members in different time zones can see
   an entry on different days. Not handled yet.
 - **Supabase is configured** (`extra.supabaseUrl` / publishable `extra.supabaseAnonKey` in
@@ -279,7 +308,10 @@ scheduling and sync in step.
   Sign-in, sync, the backup file and households pass automated tests but haven't been
   exercised on a real phone or with two real accounts yet.
 - **No iOS path exercised** (package/bundle id `com.since.app`; EAS project `since-fresh`, 3c35d81c).
-- **Suggestions are English keyword-only**, ~10 hardcoded rules.
+- **Suggestions are English keyword-only**, 14 hardcoded rules (8 of them are also the
+  empty-list starters). Gaps are neutral memory aids, not advice.
+- **Snoozes and the reminder time live on one phone only.** Not synced and not in the backup
+  file; a second phone has its own.
 - **No dark mode.**
 - **Not built yet, by design:** notifications about other members' actions, live updates,
   iOS / Sign in with Apple, more than one household per person, assigning items to a person,
@@ -288,7 +320,8 @@ scheduling and sync in step.
   `src/**/*.test.ts`: sync, entries, ownership, migrations, backup, household rules, history,
   display, undo, auth); `npm run test:ui` (Jest + jest-expo, `*.ui.test.tsx`); database tests
   (`supabase/tests/run.sh`, access rules as owner, member and outsider); Maestro flows in
-  `.maestro/` on an emulator. The notification engine and status/date logic have no unit tests.
+  `.maestro/` on an emulator. Notification scheduling has unit tests (`plan.test.ts`);
+  status/date logic still has none of its own.
 
 ---
 
@@ -304,5 +337,6 @@ scheduling and sync in step.
 
 *Generated 2026-06-29. Updated 2026-08-22 for the since/since-fresh consolidation; 2026-10-02 to
 reflect the secret move, tests and committed Supabase config; 2026-10-20 for emailed-code
-sign-in, entry-by-entry sync, the backup file, households and automatic releases.
+sign-in, entry-by-entry sync, the backup file, households and automatic releases; 2026-10-21
+for sync on return, snooze ("Not yet"), reminder time and empty-list starters.
 Pull directly from code — no assumptions.*

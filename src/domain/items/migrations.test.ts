@@ -331,3 +331,20 @@ describe('reminder time, kept beside the list on this phone', () => {
     assert.deepEqual(parseReminderTime(JSON.stringify({ version: 2, hour: 7, minute: 0, weekends: 9 })), { hour: 7, minute: 0 });
   });
 });
+
+describe('starters on an empty list', () => {
+  // A starter only fills in the Add form; what's saved is an ordinary item.
+  test('an item made from a starter has the usual stored shape and loads unchanged', () => {
+    const fromStarter = {
+      ...base,
+      id: 'smoke',
+      name: 'Smoke alarm battery',
+      category: 'Household',
+      lastDoneDate: '2026-10-21',
+      history: [{ id: 'e1', date: '2026-10-21', createdAt: base.createdAt }],
+      repeatValue: 12,
+      repeatUnit: 'months' as const,
+    };
+    assert.deepEqual(parseAndMigrate(toEnvelope([fromStarter])), [fromStarter]);
+  });
+});
