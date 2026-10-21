@@ -8,6 +8,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseAndMigrate, toEnvelope, STORAGE_VERSION } from './migrations.ts';
 import { mergeItems, type CloudEntry } from '../sync/runSync.ts';
+import { parseSnoozes, serializeSnoozes, makeSnooze } from '../snooze/rules.ts';
 
 const base = {
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -264,5 +265,47 @@ describe('households (sync plan, PR 6)', () => {
     }));
     assert.equal('ownerId' in old, false);
     assert.equal('householdId' in old, false);
+  });
+});
+
+describe('snooze ("Not yet"), kept beside the list on this phone', () => {
+  // Snoozes live under their own key (@since_snoozes_v1). The list's stored
+  // shape doesn't change, so this build and older ones load it as before.
+  const gutters = {
+    ...base,
+    id: 'gutters',
+    name: 'Gutters',
+    category: 'Household',
+    lastDoneDate: '2026-09-01',
+    history: [{ id: 'e1', date: '2026-09-01' }],
+    repeatValue: 1,
+    repeatUnit: 'months' as const,
+  };
+
+  test('a list saved by the current app loads unchanged, with or without a snooze', () => {
+    const saved = toEnvelope([gutters]);
+    assert.deepEqual(parseAndMigrate(saved), [gutters]);
+    // Snoozing writes only the snooze key, never the list
+    serializeSnoozes({ gutters: makeSnooze(gutters, '1-week', new Date(2026, 9, 21)) });
+    assert.deepEqual(parseAndMigrate(saved), [gutters]);
+    assert.equal(JSON.parse(saved).version, STORAGE_VERSION);
+  });
+
+  test('no snoozes saved yet (every phone before this build) is no snoozes', () => {
+    assert.deepEqual(parseSnoozes(null), {});
+  });
+
+  test('unreadable snooze data is ignored rather than breaking reminders', () => {
+    assert.deepEqual(parseSnoozes('not json'), {});
+    assert.deepEqual(parseSnoozes(JSON.stringify({ version: 1 })), {});
+    assert.deepEqual(parseSnoozes(JSON.stringify({ version: 1, snoozes: { a: { until: 'soon' } } })), {});
+  });
+
+  test('a snooze saved by a newer build with extra fields still loads', () => {
+    const raw = JSON.stringify({
+      version: 2,
+      snoozes: { gutters: { until: '2026-10-28', lastDoneDate: '2026-09-01', repeatValue: 1, repeatUnit: 'months', reason: 'away' } },
+    });
+    assert.equal(parseSnoozes(raw).gutters.until, '2026-10-28');
   });
 });

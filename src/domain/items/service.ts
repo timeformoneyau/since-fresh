@@ -17,10 +17,7 @@ import { loadItems, saveItems } from './storage';
 import { deriveItem } from './derive';
 import { sortItems } from '../../utils/statusUtils';
 import { todayString } from '../../utils/dateUtils';
-import {
-  scheduleItemNotifications,
-  rescheduleAllNotifications,
-} from '../../notifications/scheduler';
+import { rescheduleAllNotifications } from '../../notifications/scheduler';
 import { enqueueUpsert, enqueueDelete, enqueueEntryUpsert, enqueueEntryDelete } from '../sync/queue';
 import { syncInBackground } from '../sync/engine';
 import { withoutCompletion, copyForRestore } from './undo';
@@ -36,6 +33,8 @@ import {
 import { toBackup, readBackup, planRestore, describeRestore } from '../backup/backup';
 import { loadHouseholdState } from '../household/store';
 import { canChangeSharing, canDelete } from '../household/rules';
+import { loadSnoozes, saveSnoozes } from '../snooze/store';
+import { activeSnoozeUntil, canSnooze, makeSnooze, type SnoozeOption } from '../snooze/rules';
 
 export { canUndoDone } from './undo';
 export { BackupError } from '../backup/backup';
@@ -72,8 +71,9 @@ type Change = { fields?: boolean; entryChanged?: string; entryDeleted?: string }
 
 /** Save one changed item, reschedule its notifications and record it for sync. */
 async function persist(items: SinceItem[], updated: SinceItem, change: Change): Promise<DerivedItem> {
-  await saveItems(items.map((i) => (i.id === updated.id ? updated : i)));
-  await scheduleItemNotifications(updated);
+  const next = items.map((i) => (i.id === updated.id ? updated : i));
+  await saveItems(next);
+  await rescheduleAllNotifications(next);
 
   if (change.fields) await enqueueUpsert(updated.id);
   if (change.entryChanged) await enqueueEntryUpsert({ itemId: updated.id, entryId: change.entryChanged });
@@ -90,17 +90,47 @@ async function loadOne(itemId: string): Promise<{ items: SinceItem[]; existing: 
   return { items, existing };
 }
 
+/** Derived fields plus this phone's snooze, if any. */
+async function withSnoozes(items: SinceItem[]): Promise<DerivedItem[]> {
+  const snoozes = await loadSnoozes();
+  const now = new Date();
+  return items.map((i) => ({ ...deriveItem(i), snoozedUntil: activeSnoozeUntil(i, snoozes, now) }));
+}
+
 /** Load all items, sorted for display, with derived fields attached. */
 export async function getDerivedItems(): Promise<DerivedItem[]> {
   const items = await loadItems();
-  return sortItems(items).map(deriveItem);
+  return withSnoozes(sortItems(items));
 }
 
 /** Load a single item by ID with derived fields. Returns null if not found. */
 export async function getDerivedItemById(itemId: string): Promise<DerivedItem | null> {
   const items = await loadItems();
   const item = items.find((i) => i.id === itemId);
-  return item ? deriveItem(item) : null;
+  return item ? (await withSnoozes([item]))[0] : null;
+}
+
+/**
+ * "Not yet": quiet this item's reminders for a while, on this phone only
+ * (snooze/rules.ts). The item itself is untouched, so nothing syncs. Only
+ * for an item that is due or overdue. Returns the day reminders start again.
+ */
+export async function snoozeItem(itemId: string, option: SnoozeOption): Promise<string> {
+  const { items, existing } = await loadOne(itemId);
+  const now = new Date();
+  if (!canSnooze(existing, now)) throw new Error('Only something that is due can be snoozed.');
+  const snooze = makeSnooze(existing, option, now);
+  await saveSnoozes({ ...(await loadSnoozes()), [itemId]: snooze });
+  await rescheduleAllNotifications(items);
+  return snooze.until;
+}
+
+/** Undo a snooze: reminders as before. */
+export async function clearSnooze(itemId: string): Promise<void> {
+  const { [itemId]: _gone, ...rest } = await loadSnoozes();
+  await saveSnoozes(rest);
+  await rescheduleAllNotifications(await loadItems());
+  notifyItemsChanged();
 }
 
 /**
@@ -124,9 +154,9 @@ export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
     updatedAt: now,
     ...(input.householdId ? { householdId: input.householdId } : {}),
   };
-  const existing = await loadItems();
-  await saveItems([...existing, item]);
-  await scheduleItemNotifications(item);
+  const all = [...(await loadItems()), item];
+  await saveItems(all);
+  await rescheduleAllNotifications(all);
 
   await enqueueUpsert(item.id);
   syncInBackground();
@@ -238,8 +268,9 @@ export async function undoMarkDone(
   if (!undone) return deriveItem(existing);
   const updated = withHistory(undone, undone.history, now);
 
-  await saveItems(items.map((i) => (i.id === itemId ? updated : i)));
-  await scheduleItemNotifications(updated);
+  const next = items.map((i) => (i.id === itemId ? updated : i));
+  await saveItems(next);
+  await rescheduleAllNotifications(next);
 
   await enqueueEntryDelete({ itemId: updated.id, entryId: eventId });
   syncInBackground();

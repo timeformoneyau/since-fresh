@@ -23,4 +23,6 @@ export interface UpdateItemInput {
 /** A SinceItem with all computed fields attached. Single source of truth for derived state. */
 export interface DerivedItem extends SinceItem {
   status: ItemStatus;
+  /** YYYY-MM-DD the item's snooze ends, while snoozed on this phone. Never stored. */
+  snoozedUntil?: string | null;
 }
