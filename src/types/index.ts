@@ -72,7 +72,8 @@ export const DEFAULT_CATEGORIES = [
 // Main app navigation
 export type RootStackParamList = {
   Main: undefined;
-  Add: undefined;
+  /** A starter tapped on the empty list opens Add filled in with it. */
+  Add: { name: string; category: string } | undefined;
   Edit: { itemId: string };
   Detail: { itemId: string };
   EditEntry: { itemId: string; entryId: string };

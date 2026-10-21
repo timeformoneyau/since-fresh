@@ -1,27 +1,37 @@
 import React from 'react';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { createItem } from '../domain/items/service';
 import { todayString } from '../utils/dateUtils';
 import ItemForm from '../components/ItemForm';
 import { useHousehold } from '../components/useHousehold';
+import { getSuggestion } from '../utils/suggestions';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Add'>;
 
 export default function AddItemScreen() {
   const navigation = useNavigation<Nav>();
   const { household } = useHousehold();
+  // From a starter: its name, category and usual gap, all still editable
+  const starter = useRoute<RouteProp<RootStackParamList, 'Add'>>().params;
+  const usual = starter ? getSuggestion(starter.name) : null;
 
   return (
     <ItemForm
       prefix="add"
       title="Track something"
-      initial={{ name: '', category: 'Other', lastDoneDate: todayString(), repeatValue: 30, repeatUnit: 'days' }}
+      initial={{
+        name: starter?.name ?? '',
+        category: starter?.category ?? 'Other',
+        lastDoneDate: todayString(),
+        repeatValue: usual?.repeatValue ?? 30,
+        repeatUnit: usual?.repeatUnit ?? 'days',
+      }}
       submitLabel="Track this"
       dateHelp="This becomes the first entry in its history. You can add or edit past entries later."
       suggestFromName
-      autoFocusName
+      autoFocusName={!starter}
       householdName={household?.name}
       onSubmit={async ({ shared, ...values }) => {
         await createItem({ ...values, householdId: shared && household ? household.id : null });

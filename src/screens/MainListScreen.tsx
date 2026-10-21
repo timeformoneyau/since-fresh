@@ -3,6 +3,7 @@ import {
   View,
   Text,
   FlatList,
+  ScrollView,
   TouchableOpacity,
   StyleSheet,
   StatusBar,
@@ -22,6 +23,8 @@ import {
   onItemsChanged,
 } from '../domain/items/service';
 import { sortItems } from '../utils/statusUtils';
+import { STARTERS } from '../utils/suggestions';
+import { intervalText } from '../domain/items/display';
 import { isCloudSyncConfigured } from '../lib/supabase';
 import { syncNow } from '../domain/sync/engine';
 import ItemCard from '../components/ItemCard';
@@ -34,12 +37,6 @@ import { filterItems, canDelete, type ListFilter } from '../domain/household/ser
 import { colours, palette, fonts, type, radius, space, TAP } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
-const QUICK_START = [
-  { name: 'Dentist', category: 'Health' },
-  { name: 'Tyre rotation', category: 'Auto' },
-  { name: 'Air filter', category: 'Household' },
-  { name: 'Smoke alarm', category: 'Household' },
-];
 
 export default function MainListScreen() {
   const navigation = useNavigation<Nav>();
@@ -171,7 +168,7 @@ export default function MainListScreen() {
       <View style={styles.safe}>
         <StatusBar barStyle="light-content" backgroundColor={palette.navy} />
         {header}
-        <View style={styles.emptyContainer}>
+        <ScrollView style={styles.emptyScroll} contentContainerStyle={[styles.emptyContainer, { paddingBottom: 32 + insets.bottom }]}>
           <Text style={styles.appSupport}>
             Track the things you don't do often enough and we'll keep count for you.
           </Text>
@@ -185,20 +182,24 @@ export default function MainListScreen() {
             <Text style={styles.primaryCTAText}>Add something</Text>
           </TouchableOpacity>
 
-          <Text style={styles.quickStartLabel}>Quick start</Text>
-          <View style={styles.quickStartRow}>
-            {QUICK_START.map((q) => (
-              <TouchableOpacity
-                key={q.name}
-                style={styles.chip}
-                onPress={() => navigation.navigate('Add')}
-                accessibilityRole="button"
-              >
-                <Text style={styles.chipText}>{q.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+          <Text style={styles.quickStartLabel}>Or start with one of these</Text>
+          {STARTERS.map((s) => (
+            <TouchableOpacity
+              key={s.name}
+              style={styles.starterRow}
+              testID={`starter-${s.name}`}
+              onPress={() => navigation.navigate('Add', { name: s.name, category: s.category })}
+              accessibilityRole="button"
+              accessibilityLabel={`Add ${s.name}, every ${intervalText(s.repeatValue, s.repeatUnit)}`}
+            >
+              <View style={styles.shrink}>
+                <Text style={styles.chipText}>{s.name}</Text>
+                <Text style={type.secondary}>Every {intervalText(s.repeatValue, s.repeatUnit)}</Text>
+              </View>
+              <MaterialCommunityIcons name="plus" size={22} color={palette.ink} />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
     );
   }
@@ -335,8 +336,8 @@ const styles = StyleSheet.create({
   },
 
   // Empty state
+  emptyScroll: { flex: 1 },
   emptyContainer: {
-    flex: 1,
     paddingHorizontal: space.screen + 4,
     paddingTop: 28,
   },
@@ -367,20 +368,20 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 12,
   },
-  quickStartRow: {
+  starterRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
+    alignItems: 'center',
+    gap: 12,
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: radius.pill,
+    borderRadius: radius.card,
     paddingHorizontal: 16,
-    minHeight: TAP,
-    justifyContent: 'center',
+    paddingVertical: 10,
+    minHeight: TAP + 8,
     backgroundColor: palette.card,
+    marginBottom: 8,
   },
+  shrink: { flex: 1 },
   chipText: {
     fontFamily: fonts.semibold,
     fontSize: 14,
