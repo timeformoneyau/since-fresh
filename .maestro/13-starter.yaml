@@ -1,0 +1,36 @@
+appId: com.since.app
+name: Empty list - tap a starter, Add opens filled in, change it, then save
+---
+- runFlow: subflows/launch.yaml
+- scrollUntilVisible:
+    element:
+      id: "starter-Smoke alarm battery"
+- assertVisible: "Every 12 months"
+- takeScreenshot: 13-starters
+- tapOn:
+    id: "starter-Smoke alarm battery"
+- extendedWaitUntil:
+    visible:
+      id: "add-name-input"
+    timeout: 10000
+- assertVisible: "Smoke alarm battery"
+- assertVisible:
+    id: "add-repeat-value"
+    text: "12"
+# Editable before saving: one month less
+- tapOn:
+    id: "add-stepper-minus"
+- assertVisible:
+    id: "add-repeat-value"
+    text: "11"
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Smoke alarm battery"
+    timeout: 10000
+- assertNotVisible:
+    id: "starter-Gutters"
