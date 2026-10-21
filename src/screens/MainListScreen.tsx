@@ -29,6 +29,7 @@ import { useToast } from '../components/Toast';
 import SystemStatus from '../components/SystemStatus';
 import LogoMark from '../components/LogoMark';
 import { useHousehold } from '../components/useHousehold';
+import { useSyncOnResume } from '../components/useSyncOnResume';
 import { filterItems, canDelete, type ListFilter } from '../domain/household/service';
 import { colours, palette, fonts, type, radius, space, TAP } from '../theme/tokens';
 
@@ -65,6 +66,9 @@ export default function MainListScreen() {
       });
     }, [refresh]),
   );
+
+  // Back from the background: fresh dates, then a quiet sync
+  useSyncOnResume(refresh, refresh, (message) => showToast({ message }));
 
   // Picks up undo actions taken from a toast while this screen is showing
   useEffect(() => onItemsChanged(refresh), [refresh]);

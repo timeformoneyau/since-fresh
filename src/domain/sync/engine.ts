@@ -5,7 +5,8 @@
  *   - Every write lands in AsyncStorage first and always succeeds, online or
  *     off. The UI never waits on the network and never fails because of it.
  *   - Sync is opportunistic: mutations fire it and forget, and it also runs on
- *     app start, on sign-in, and when the list regains focus.
+ *     app start, on sign-in, when the list regains focus, and when the app
+ *     returns from the background (at most every few minutes, resume.ts).
  *   - Signed out, or with no credentials configured, the app is simply a
  *     local-only app. Sync no-ops rather than erroring.
  *
@@ -39,6 +40,7 @@ import { classifySyncError } from './classify';
 import { saveLastSyncedAt, clearLastSyncedAt } from './lastSynced';
 import { SYNC_COPY } from './backupStatus';
 import { setSignInNotice } from '../auth/sessionNotice';
+import { shouldSyncOnResume } from './resume';
 
 export type { SyncOutcome } from './runSync';
 export type { SignInDecision, SignInResult } from './ownership';
@@ -122,6 +124,9 @@ async function afterSync(outcome: SyncOutcome): Promise<void> {
 /** Guards against overlapping runs — mutations can fire this rapidly. */
 let inFlight: Promise<SyncOutcome> | null = null;
 
+/** When the last sync (from any trigger) finished, for the resume throttle. */
+let lastFinishedAt: number | null = null;
+
 /** Take items off this phone (they're no longer this account's to see), with their queued changes. */
 async function dropItems(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
@@ -176,7 +181,19 @@ export async function syncNow(): Promise<SyncOutcome> {
     return await inFlight;
   } finally {
     inFlight = null;
+    lastFinishedAt = Date.now();
   }
+}
+
+/**
+ * Sync when the app returns from the background (resume.ts): quietly, only
+ * with cloud sync set up, never alongside another run, and at most once every
+ * few minutes. Resolves null when it didn't run. Signed out, runSync skips.
+ */
+export async function syncOnResume(): Promise<SyncOutcome | null> {
+  if (!isCloudSyncConfigured()) return null;
+  if (!shouldSyncOnResume(lastFinishedAt, Date.now(), inFlight !== null)) return null;
+  return syncNow();
 }
 
 /** Fire-and-forget trigger for mutation paths. Never blocks the caller. */
