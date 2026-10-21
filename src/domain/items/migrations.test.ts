@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { parseAndMigrate, toEnvelope, STORAGE_VERSION } from './migrations.ts';
 import { mergeItems, type CloudEntry } from '../sync/runSync.ts';
 import { parseSnoozes, serializeSnoozes, makeSnooze } from '../snooze/rules.ts';
+import { parseReminderTime, serializeReminderTime } from '../../notifications/reminderTime.ts';
 
 const base = {
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -307,5 +308,26 @@ describe('snooze ("Not yet"), kept beside the list on this phone', () => {
       snoozes: { gutters: { until: '2026-10-28', lastDoneDate: '2026-09-01', repeatValue: 1, repeatUnit: 'months', reason: 'away' } },
     });
     assert.equal(parseSnoozes(raw).gutters.until, '2026-10-28');
+  });
+});
+
+describe('reminder time, kept beside the list on this phone', () => {
+  // Its own key (@since_reminder_time_v1); the list's stored shape is unchanged.
+  test('nothing saved yet (every phone before this build) is 9 am, as before', () => {
+    assert.deepEqual(parseReminderTime(null), { hour: 9, minute: 0 });
+  });
+
+  test('a saved time round trips', () => {
+    assert.deepEqual(parseReminderTime(serializeReminderTime({ hour: 18, minute: 0 })), { hour: 18, minute: 0 });
+  });
+
+  test('unreadable or impossible values fall back to 9 am', () => {
+    for (const raw of ['nope', '{}', JSON.stringify({ hour: 25, minute: 0 }), JSON.stringify({ hour: 7.5, minute: 0 })]) {
+      assert.deepEqual(parseReminderTime(raw), { hour: 9, minute: 0 });
+    }
+  });
+
+  test('a time saved by a newer build with extra fields still loads', () => {
+    assert.deepEqual(parseReminderTime(JSON.stringify({ version: 2, hour: 7, minute: 0, weekends: 9 })), { hour: 7, minute: 0 });
   });
 });

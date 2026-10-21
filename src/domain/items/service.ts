@@ -18,6 +18,8 @@ import { deriveItem } from './derive';
 import { sortItems } from '../../utils/statusUtils';
 import { todayString } from '../../utils/dateUtils';
 import { rescheduleAllNotifications } from '../../notifications/scheduler';
+import { saveReminderTime } from '../../notifications/reminderTimeStore';
+import type { ReminderTime } from '../../notifications/reminderTime';
 import { enqueueUpsert, enqueueDelete, enqueueEntryUpsert, enqueueEntryDelete } from '../sync/queue';
 import { syncInBackground } from '../sync/engine';
 import { withoutCompletion, copyForRestore } from './undo';
@@ -366,6 +368,12 @@ export async function applyRestore(backup: SinceItem[]): Promise<void> {
   }
   syncInBackground();
   notifyItemsChanged();
+}
+
+/** Change the time of day reminders go out, and move every scheduled one to it. */
+export async function setReminderTime(time: ReminderTime): Promise<void> {
+  await saveReminderTime(time);
+  await rescheduleAllNotifications(await loadItems());
 }
 
 /** Reschedule every reminder (after "Remind me about this" changes). */

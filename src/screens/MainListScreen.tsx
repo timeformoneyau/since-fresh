@@ -141,12 +141,12 @@ export default function MainListScreen() {
           <Text style={styles.wordmark}>Since</Text>
         </View>
         <View style={styles.headerActions}>
-          {/* Always shown: the backup file works without an account */}
+          {/* Always shown: reminder time and the backup file work without an account */}
           <TouchableOpacity
             style={styles.accountBtn}
             testID="main-account-button"
             onPress={() => navigation.navigate('Account')}
-            accessibilityLabel={isCloudSyncConfigured() ? 'Account' : 'Backup'}
+            accessibilityLabel={isCloudSyncConfigured() ? 'Account' : 'Settings'}
             accessibilityRole="button"
           >
             <MaterialCommunityIcons name="account-outline" size={24} color={palette.ringPale} />

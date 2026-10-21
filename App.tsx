@@ -86,7 +86,7 @@ function AppNavigator() {
       <AppStack.Screen
         name="Account"
         component={AccountScreen}
-        options={{ title: isCloudSyncConfigured() ? 'Account' : 'Backup' }}
+        options={{ title: isCloudSyncConfigured() ? 'Account' : 'Settings' }}
       />
       <AppStack.Screen name="SignIn" component={SignInScreen} options={{ title: 'Sign in' }} />
       <AppStack.Screen
