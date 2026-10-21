@@ -69,6 +69,27 @@ describe('the schedule', () => {
   });
 });
 
+describe('the reminder time', () => {
+  test('every reminder, grouped notice and end of snooze goes out at the chosen time', () => {
+    const overdue = item('Gutters', '2026-09-11');
+    const plan = planNotifications([item('Dentist', '2026-10-01'), overdue], {
+      now: NOW,
+      time: { hour: 18, minute: 30 },
+      snoozes: snoozed(overdue, '1-week'),
+    });
+    assert.ok(plan.length > 5);
+    for (const n of plan) assert.equal(format(n.triggerDate, 'HH:mm'), '18:30');
+  });
+
+  test("today's reminder still goes out if the time is later today, not if it has passed", () => {
+    const dueToday = item('Bins', '2026-09-21');
+    const at = (hour: number) =>
+      planNotifications([dueToday], { now: NOW, time: { hour, minute: 0 } }).some((n) => n.identifier === 'since_Bins_due');
+    assert.equal(at(7), false); // 7am has passed (now is 8am)
+    assert.equal(at(12), true);
+  });
+});
+
 describe('the daily cap', () => {
   test(`never more than ${MAX_PER_DAY} on one day`, () => {
     const items = ['A', 'B', 'C', 'D'].map((id) => item(id, '2026-10-01'));

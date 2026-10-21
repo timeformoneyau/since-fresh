@@ -14,13 +14,15 @@ import { loadHouseholdState } from '../domain/household/store';
 import { isMuted } from '../domain/household/rules';
 import { loadSnoozes, saveSnoozes } from '../domain/snooze/store';
 import { pruneSnoozes } from '../domain/snooze/rules';
+import { loadReminderTime } from './reminderTimeStore';
 
 /**
  * Reschedule every reminder for the list as it now stands.
  *
  * Shared items are reminded on every member's phone, except where that
  * member turned "Remind me about this" off (households). Snoozed items wait
- * until their snooze ends. The daily cap applies to everything together.
+ * until their snooze ends. All go out at the chosen reminder time (9 am
+ * unless changed). The daily cap applies to everything together.
  *
  * Snoozes that no longer apply (the item was marked done, its repeat changed,
  * it was deleted, or the snooze ended) are dropped here, so any change to the
@@ -33,7 +35,10 @@ export async function rescheduleAllNotifications(items: SinceItem[]): Promise<vo
   if (Object.keys(snoozes).length !== Object.keys(all).length) {
     await saveSnoozes(snoozes).catch(() => {});
   }
-  await engine.rescheduleAllNotifications(items.filter((i) => !isMuted(i, state)), { snoozes });
+  await engine.rescheduleAllNotifications(items.filter((i) => !isMuted(i, state)), {
+    snoozes,
+    time: await loadReminderTime(),
+  });
 }
 
 /**
