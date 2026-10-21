@@ -24,6 +24,7 @@ import {
 import CategoryTile from './CategoryTile';
 import StatusChip from './StatusChip';
 import { isShared } from '../domain/household/rules';
+import { snoozeNote } from '../domain/snooze/rules';
 
 interface Props {
   item: SinceItem;
@@ -33,10 +34,13 @@ interface Props {
   onDelete?: (item: SinceItem) => void;
   /** Opens the item screen. */
   onPress?: (item: SinceItem) => void;
+  /** The day this phone's snooze ends, while snoozed. */
+  snoozedUntil?: string | null;
 }
 
-export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }: Props) {
+export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress, snoozedUntil }: Props) {
   const status = computeItemStatus(item);
+  const snoozed = snoozeNote(snoozedUntil, new Date());
   const { label, daysSince } = status;
   const secondary = secondaryLine(status);
 
@@ -150,6 +154,9 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress }
           <StatusChip label={label} />
           <Text style={[type.secondary, styles.statusLine]}>{secondary}</Text>
         </View>
+        {snoozed && (
+          <Text style={[type.secondary, styles.snoozeNote]} testID={`item-${item.name}-snoozed`}>{snoozed}</Text>
+        )}
 
         {progress !== null && (
           <View style={styles.barTrack} testID={`item-${item.name}-bar`}>
@@ -250,6 +257,9 @@ const styles = StyleSheet.create({
   },
   statusLine: {
     flexShrink: 1,
+  },
+  snoozeNote: {
+    marginTop: 6,
   },
   barTrack: {
     height: 6,

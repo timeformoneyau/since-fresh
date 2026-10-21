@@ -15,7 +15,10 @@ import {
   gapsNewestFirst,
   HistoryError,
   refreshReminders,
+  snoozeItem,
+  clearSnooze,
 } from '../domain/items/service';
+import { canSnooze, snoozeNote, SNOOZE_OPTIONS, type SnoozeOption } from '../domain/snooze/rules';
 import { useHousehold } from '../components/useHousehold';
 import { doneBy, isMuted, isShared, setRemindMe, householdErrorMessage } from '../domain/household/service';
 import {
@@ -58,6 +61,7 @@ export default function DetailScreen() {
   const [item, setItem] = useState<DerivedItem | null>(null);
   const [pickingPastDate, setPickingPastDate] = useState(false);
   const [changingRemind, setChangingRemind] = useState(false);
+  const [choosingSnooze, setChoosingSnooze] = useState(false);
   const household = useHousehold();
   const showToast = useToast();
 
@@ -105,6 +109,29 @@ export default function DetailScreen() {
     });
   }
 
+  async function handleSnooze(option: SnoozeOption) {
+    setChoosingSnooze(false);
+    try {
+      const until = await snoozeItem(itemId, option);
+      refresh();
+      showToast({
+        message: snoozeNote(until, new Date()) ?? 'Snoozed',
+        actionLabel: 'Undo',
+        onAction: async () => {
+          try {
+            await clearSnooze(itemId);
+            refresh();
+          } catch {
+            showToast({ message: "Couldn't undo. Please try again." });
+          }
+        },
+      });
+    } catch {
+      refresh();
+      showToast({ message: "Couldn't snooze that. Please try again." });
+    }
+  }
+
   async function handleAddPast(date: string) {
     setPickingPastDate(false);
     try {
@@ -124,6 +151,8 @@ export default function DetailScreen() {
   const gaps = gapsNewestFirst(item);
   const entries = item.history; // newest first
   const overdue = status.daysUntilDue !== null && status.daysUntilDue <= 0;
+  const snoozed = snoozeNote(item.snoozedUntil, new Date());
+  const offerSnooze = !item.snoozedUntil && canSnooze(item, new Date());
 
   return (
     <View style={styles.screen}>
@@ -186,6 +215,48 @@ export default function DetailScreen() {
             >
               <Text style={styles.primaryBtnText}>Done today</Text>
             </TouchableOpacity>
+          )}
+          {snoozed && (
+            <Text style={[type.secondary, styles.snoozedText]} testID="detail-snoozed">
+              {snoozed}. Reminders start again then.
+            </Text>
+          )}
+          {offerSnooze && !choosingSnooze && (
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => setChoosingSnooze(true)}
+              testID="detail-not-yet-button"
+              accessibilityRole="button"
+              accessibilityLabel={`Not yet: snooze reminders for ${item.name}`}
+            >
+              <Text style={styles.secondaryBtnText}>Not yet</Text>
+            </TouchableOpacity>
+          )}
+          {offerSnooze && choosingSnooze && (
+            <View style={styles.snoozeChoices}>
+              <Text style={[type.secondary, styles.snoozedText]}>Remind me again in</Text>
+              <View style={styles.snoozeRow}>
+                {SNOOZE_OPTIONS.map((o) => (
+                  <TouchableOpacity
+                    key={o.key}
+                    style={styles.snoozeChip}
+                    onPress={() => handleSnooze(o.key)}
+                    testID={`snooze-${o.key}`}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.secondaryBtnText}>{o.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity
+                style={styles.textBtn}
+                onPress={() => setChoosingSnooze(false)}
+                testID="snooze-cancel"
+                accessibilityRole="button"
+              >
+                <Text style={styles.textBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
           )}
           <TouchableOpacity
             style={styles.textBtn}
@@ -376,6 +447,28 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { ...type.button, color: '#FFFFFF' },
   textBtn: { minHeight: TAP, justifyContent: 'center', alignItems: 'center', marginTop: 4 },
+  secondaryBtn: {
+    minHeight: TAP,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: palette.ink,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  secondaryBtnText: { fontFamily: fonts.semibold, fontSize: 15, color: palette.ink },
+  snoozedText: { textAlign: 'center', marginTop: 10 },
+  snoozeChoices: { marginTop: 6 },
+  snoozeRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  snoozeChip: {
+    flex: 1,
+    minHeight: TAP,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: palette.ink,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   textBtnText: { fontFamily: fonts.regular, fontSize: 14.5, color: palette.muted, textAlign: 'center' },
   link: { fontFamily: fonts.bold, color: palette.navy },
 

@@ -8,7 +8,7 @@ import {
   parseISO,
   startOfDay,
 } from 'date-fns';
-import { RepeatUnit } from '../types';
+import type { RepeatUnit } from '../types';
 
 /** Return today as a YYYY-MM-DD string */
 export function todayString(): string {

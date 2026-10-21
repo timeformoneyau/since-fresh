@@ -1,0 +1,56 @@
+appId: com.since.app
+name: Not yet - snooze a due item for a week, the card says until when
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Car service"
+- hideKeyboard
+# Last done: same day last year, every 12 months, so it's due today
+- scrollUntilVisible:
+    element:
+      id: "add-last-done-button"
+- tapOn:
+    id: "add-last-done-button"
+- tapOn:
+    id: "date-year-${new Date().getFullYear() - 1}"
+- tapOn:
+    id: "date-picker-done"
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Car service"
+    timeout: 10000
+- tapOn:
+    id: "item-Car service-history"
+- extendedWaitUntil:
+    visible:
+      id: "detail-not-yet-button"
+    timeout: 10000
+- tapOn:
+    id: "detail-not-yet-button"
+- assertVisible: "Remind me again in"
+- takeScreenshot: 12-snooze-menu
+- tapOn:
+    id: "snooze-1-week"
+- extendedWaitUntil:
+    visible:
+      id: "detail-snoozed"
+    timeout: 10000
+# Still due today: snooze only quiets reminders
+- assertVisible: "Due today"
+- assertNotVisible:
+    id: "detail-not-yet-button"
+- tapOn:
+    id: "detail-back"
+- extendedWaitUntil:
+    visible:
+      id: "item-Car service-snoozed"
+    timeout: 10000
+- takeScreenshot: 12-snoozed-card

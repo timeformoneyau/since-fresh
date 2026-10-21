@@ -242,6 +242,7 @@ export default function MainListScreen() {
             onEdit={handleEdit}
             onDelete={canDelete(item, household) ? handleDelete : undefined}
             onPress={handleOpenDetail}
+            snoozedUntil={item.snoozedUntil}
           />
         )}
         contentContainerStyle={[styles.list, { paddingBottom: 32 + insets.bottom }]}
