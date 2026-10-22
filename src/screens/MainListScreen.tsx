@@ -33,22 +33,39 @@ import SystemStatus from '../components/SystemStatus';
 import LogoMark from '../components/LogoMark';
 import { useHousehold } from '../components/useHousehold';
 import { useSyncOnResume } from '../components/useSyncOnResume';
-import { groupByCategory, LIST_VIEWS, DEFAULT_LIST_VIEW, type ListView } from '../domain/listView/rules';
+import {
+  groupByCategory,
+  groupByPerson,
+  listViewsFor,
+  effectiveListView,
+  DEFAULT_LIST_VIEW,
+  type ListView,
+} from '../domain/listView/rules';
 import { loadListView, saveListView } from '../domain/listView/store';
-import { filterItems, canDelete, type ListFilter } from '../domain/household/service';
+import {
+  filterItems,
+  canDelete,
+  lookedAfterName,
+  type ListFilter,
+  type HouseholdState,
+} from '../domain/household/service';
 import { colours, palette, fonts, type, radius, space, TAP } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
-/** A row of the list: an item, or (By category) a category heading. */
+/** A row of the list: an item, or (By category, By person) a group heading. */
 type Row =
   | { kind: 'item'; item: DerivedItem }
-  | { kind: 'heading'; title: string; count: number };
+  | { kind: 'heading'; key: string; title: string; count: number };
 
-function toRows(sorted: DerivedItem[], view: ListView): Row[] {
+function toRows(sorted: DerivedItem[], view: ListView, household: HouseholdState): Row[] {
   if (view === 'urgent') return sorted.map((item) => ({ kind: 'item', item }));
-  return groupByCategory(sorted).flatMap((g): Row[] => [
-    { kind: 'heading', title: g.title, count: g.items.length },
+  const groups = view === 'person'
+    // Person headings get their own keys: a member could be called "Household"
+    ? groupByPerson(sorted, household).map((g) => ({ ...g, key: `person-${g.key}` }))
+    : groupByCategory(sorted).map((g) => ({ ...g, key: g.title }));
+  return groups.flatMap((g): Row[] => [
+    { kind: 'heading', key: g.key, title: g.title, count: g.items.length },
     ...g.items.map((item): Row => ({ kind: 'item', item })),
   ]);
 }
@@ -64,6 +81,9 @@ export default function MainListScreen() {
   const showToast = useToast();
   // The filter only exists while in a household
   const shown = household.household ? filterItems(items, filter) : items;
+  // "By person" only in a household; a saved one shows as Most urgent otherwise
+  const inHousehold = household.household !== null;
+  const shownView = effectiveListView(view, inHousehold);
 
   const refresh = useCallback(async () => {
     setItems(await getDerivedItems());
@@ -234,25 +254,25 @@ export default function MainListScreen() {
     <View style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={palette.navy} />
       <FlatList<Row>
-        data={toRows(sortItems(shown) as DerivedItem[], view)}
-        keyExtractor={(row) => (row.kind === 'item' ? row.item.id : `heading-${row.title}`)}
+        data={toRows(sortItems(shown) as DerivedItem[], shownView, household)}
+        keyExtractor={(row) => (row.kind === 'item' ? row.item.id : `heading-${row.key}`)}
         ListHeaderComponent={
           <>
             {header}
             <View style={styles.summaryOverlap}>
               <SystemStatus items={shown} />
             </View>
-            <View style={styles.filterRow} accessibilityRole="tablist" accessibilityLabel="View">
-              {LIST_VIEWS.map((v) => (
+            <View style={[styles.filterRow, styles.wrap]} accessibilityRole="tablist" accessibilityLabel="View">
+              {listViewsFor(inHousehold).map((v) => (
                 <TouchableOpacity
                   key={v.key}
-                  style={[styles.filterChip, view === v.key && styles.filterChipOn]}
+                  style={[styles.filterChip, shownView === v.key && styles.filterChipOn]}
                   onPress={() => chooseView(v.key)}
                   testID={`main-view-${v.key}`}
                   accessibilityRole="tab"
-                  accessibilityState={{ selected: view === v.key }}
+                  accessibilityState={{ selected: shownView === v.key }}
                 >
-                  <Text style={[styles.filterText, view === v.key && styles.filterTextOn]}>{v.label}</Text>
+                  <Text style={[styles.filterText, shownView === v.key && styles.filterTextOn]}>{v.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -279,7 +299,7 @@ export default function MainListScreen() {
         renderItem={({ item: row }) => row.kind === 'heading' ? (
           <View
             style={styles.groupHeading}
-            testID={`group-${row.title}`}
+            testID={`group-${row.key}`}
             accessibilityRole="header"
             accessibilityLabel={`${row.title}, ${row.count} ${row.count === 1 ? 'item' : 'items'}`}
           >
@@ -294,6 +314,7 @@ export default function MainListScreen() {
             onDelete={canDelete(row.item, household) ? handleDelete : undefined}
             onPress={handleOpenDetail}
             snoozedUntil={row.item.snoozedUntil}
+            lookedAfter={lookedAfterName(row.item, household)}
           />
         )}
         contentContainerStyle={[styles.list, { paddingBottom: 32 + insets.bottom }]}
@@ -310,6 +331,7 @@ const styles = StyleSheet.create({
     marginHorizontal: space.screen,
     marginBottom: space.cardGap,
   },
+  wrap: { flexWrap: 'wrap' },
   filterChip: {
     minHeight: 36,
     paddingHorizontal: 14,

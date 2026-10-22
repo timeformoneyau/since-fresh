@@ -85,6 +85,7 @@ interface SinceItem {
   updatedAt: string;
   ownerId?: string;              // set only on another member's shared item
   householdId?: string;          // set only on shared items
+  lookedAfterBy?: string | null; // shared items: the member who looks after it; absent/null = Anyone
 }
 
 const DEFAULT_CATEGORIES =
@@ -96,8 +97,8 @@ Due date: `nextDueDate = lastDoneDate + repeatValue · repeatUnit`. Items with n
 once off. Stored data changes are additive only (rollbacks run older code on newer data); every
 new shape gets a case in `src/domain/items/migrations.test.ts`.
 
-Cloud (`supabase/schema.sql`, migrations `002`–`004`): `items` (server-set `server_updated_at`,
-`kind`, `household_id`), `deleted_items` (tombstones), `completion_events` (one row per entry,
+Cloud (`supabase/schema.sql`, migrations `002`–`005`): `items` (server-set `server_updated_at`,
+`kind`, `household_id`, `looked_after_by`), `deleted_items` (tombstones), `completion_events` (one row per entry,
 soft deleted), `households`, `household_members`, `household_invites`, `item_mutes`.
 Membership changes only through database functions (`create_household`, `create_invite`,
 `join_household`, `leave_household`, `remove_member`, `transfer_ownership`,
@@ -138,12 +139,16 @@ no passwords (`domain/auth/codes.ts`); the same code creates an account for a ne
 
 - **Main** (`MainListScreen`) — one `FlatList`, sorted most-urgent-first (`sortItems`). A
   **View** row under the summary card switches between **Most urgent** (the default: one
-  list) and **By category** (the same order under category headings with a count; groups come
+  list), **By category** (the same order under category headings with a count; groups come
   in the order of their most urgent item; any category, including old "Food" items, gets its
-  own heading, and an empty one shows as "No category"). The choice is remembered on the phone
+  own heading, and an empty one shows as "No category") and, only in a household, **By
+  person** (headings You — what you look after plus your Just me items — then each other
+  member by name, then Anyone; most urgent first inside each; a saved By person shows as
+  Most urgent outside a household). The choice is remembered on the phone
   (`domain/listView/`); a missing or unreadable value means Most urgent. Each
   `ItemCard` has a "Done" button (marks done today), Edit and Delete buttons, a progress bar
-  through the interval, and a Household tag on shared items. In a household, an
+  through the interval, a Household tag on shared items, and a second small tag naming who
+  looks after it ("You" or their name) when someone is chosen. In a household, an
   All / Just me / Household filter sits below the View row and combines with either view. Done and Delete each show a toast with **Undo**
   (`undoMarkDone` / `restoreDeletedItem` in `service.ts`; a restored item takes a new id
   because the old one is tombstoned in the cloud). A one-line `SystemStatus` summary sits under the header
@@ -156,12 +161,15 @@ no passwords (`domain/auth/codes.ts`); the same code creates an account for a ne
   sync, and so does coming back to the app from the background (`useSyncOnResume`).
 - **Add** (`AddItemScreen`) and **Edit** (`EditItemScreen`) share `ItemForm`: name, "Who is
   this for?" (Just me / Household; only in a household, only for the item's creator), "Repeats"
-  (every N days/weeks/months/years) or "Once off", last-done date, category. Add shows a keyword
+  (every N days/weeks/months/years) or "Once off", last-done date, category. On a shared item
+  (any member, not only its creator): **"Who looks after this?"** (Anyone / You / each other
+  member; default Anyone). Add shows a keyword
   **suggestion** (`suggestions.ts`). Save buttons: "Track this" / "Save changes". Edit also has
   Delete (no confirm; Undo toast), offered only where the household rules allow it.
 - **Detail** (`DetailScreen`) — status card, "Mark done today", **"Not yet"** (only when due
   or overdue: snooze reminders for 3 days, 1 week or 1 month, with Undo), "Add a past entry",
-  "Remind me about this" switch (shared items), and the history; each entry shows "Done by {name}" on shared
+  **"Who looks after this?"** (shared items: Anyone / You / each member, saved straight
+  away by any member), "Remind me about this" switch (shared items), and the history; each entry shows "Done by {name}" on shared
   items and opens **EditEntry** (`EditHistoryEntryScreen`: change date or note, or delete).
 - **Account** (titled "Settings" in a local-only build) — always: **Reminders** (the time of
   day reminders come: 7 am, 8 am, 9 am (default), 12 pm, 6 pm or 8 pm). Signed out: "Back up and sync" (→ `SignIn` → `EnterCode`). Signed in: email,
@@ -197,6 +205,13 @@ per person and kept on this phone only (`@since_snoozes_v1`, not synced, not in 
 file), so it doesn't follow you to a second phone. It is recorded against the item's
 last-done date and repeat: marking done (here or synced from another phone), changing the
 repeat, or deleting ends it; ended snoozes are pruned at every reschedule.
+
+**Who looks after a shared item** (`remindsMe` in `plan.ts`): nobody chosen (Anyone) means
+every member's phone reminds, as before. Someone chosen means only that person's phone
+reminds; on everyone else's it sends nothing and isn't counted in grouped notices or the cap.
+Each phone learns of a change at its next sync, so until then it keeps its old reminders
+(an extra reminder at worst; a handover to someone whose phone hasn't synced stays quiet on
+their phone until they open Since). With no account known, everything is reminded.
 
 Every change reschedules **everything** (there is no one-item reschedule), so the cap and the
 grouped counts always hold across items. Notifications recompute on app start, after any change
@@ -257,7 +272,7 @@ src/
     suggestions.ts        keyword → repeat-interval rules (14, English-only); the 8 starters come
                           from the same table
   domain/snooze/          rules.ts (pure: when offered, how long, when it ends), store.ts
-  domain/listView/        rules.ts (pure: Most urgent / By category, grouping), store.ts
+  domain/listView/        rules.ts (pure: Most urgent / By category / By person, grouping), store.ts
   notifications/
     plan.ts               ⭐ what to schedule and when: lifecycle, grouped overdue, snoozes,
                              reminder time, per-day cap (pure, tested)
@@ -266,7 +281,7 @@ src/
     reminderTime.ts, reminderTimeStore.ts   the one reminder time (default 9 am)
   screens/                MainList, AddItem, EditItem, Detail, EditHistoryEntry, Account,
                           ChangeEmail, HouseholdSetup, auth/SignIn, auth/EnterCode
-  components/             ItemCard, ItemForm, SystemStatus, StatusChip, CategoryTile,
+  components/             ItemCard, ItemForm, LookAfterChoices, SystemStatus, StatusChip, CategoryTile,
                           DatePickerModal, Toast, HouseholdSection, useHousehold, LogoMark,
                           ReminderTimeSection, useSyncOnResume
   theme/tokens.ts         colours, type, spacing
@@ -295,6 +310,18 @@ scheduling and sync in step.
   sync the engine re-reads the household and applies changes (leaving drops its items from the
   phone, joining pulls everything). The phone mirrors the server's rules (`household/rules.ts`) so
   it never queues a change the server would refuse. Reminders skip items a member muted.
+- **Who looks after a shared item** (migration 005, `items.looked_after_by`). Optional; null is
+  Anyone. Any member can choose anyone in the household (coordination, not permission); anyone
+  can still mark it done. The server ties it to `household_members` with a foreign key, so it
+  refuses a non-member and clears the value by itself when that membership ends (leave, removal,
+  account deletion, household deleted); a check refuses it on a personal item, and a trigger
+  clears it when an item becomes Just me (including from older builds, which never send the
+  column). The phone mirrors this (`household/rules.ts`) and, before each sync, resets any value
+  naming someone no longer in the household, so a queued change is never refused forever. Sync
+  sends the column only once an item carries it, and null for a Just me item. Conflicts: as for
+  other item fields, the last phone to push the item wins it, so an edit to another field at the
+  same moment can undo someone's choice. Backup file: exported as is; an item added from a backup
+  is Just me with nobody chosen, an item already on the phone keeps its own.
 - **How sync resolves conflicts** (`domain/sync/runSync.ts`). History entries sync one by one
   (`completion_events`, migration 003), so two phones marking the same item done both keep their
   entries, and a deleted entry is soft deleted and goes everywhere. Item fields: a change still to
@@ -310,7 +337,8 @@ scheduling and sync in step.
 - **Time zones:** entry dates are local calendar dates; members in different time zones can see
   an entry on different days. Not handled yet.
 - **Supabase is configured** (`extra.supabaseUrl` / publishable `extra.supabaseAnonKey` in
-  `app.json`; schema in `supabase/schema.sql`; migrations 003 and 004 applied 20 Oct 2026).
+  `app.json`; schema in `supabase/schema.sql`; migrations 003 and 004 applied 20 Oct 2026;
+  005 (who looks after a shared item) is run by hand before the build that shows it).
   Sign-in, sync, the backup file and households pass automated tests but haven't been
   exercised on a real phone or with two real accounts yet.
 - **No iOS path exercised** (package/bundle id `com.since.app`; EAS project `since-fresh`, 3c35d81c).
@@ -320,8 +348,8 @@ scheduling and sync in step.
   in the backup file; a second phone has its own.
 - **No dark mode.**
 - **Not built yet, by design:** notifications about other members' actions, live updates,
-  iOS / Sign in with Apple, more than one household per person, assigning items to a person,
-  purging long-deleted rows.
+  iOS / Sign in with Apple, more than one household per person, purging long-deleted rows,
+  server push (so a phone hears about who looks after what only when it syncs).
 - **Tests** (all in CI, see `TESTING.md`): `npx tsc --noEmit`; `npm test` (Node's test runner,
   `src/**/*.test.ts`: sync, entries, ownership, migrations, backup, household rules, history,
   display, undo, auth); `npm run test:ui` (Jest + jest-expo, `*.ui.test.tsx`); database tests
@@ -345,5 +373,6 @@ scheduling and sync in step.
 reflect the secret move, tests and committed Supabase config; 2026-10-20 for emailed-code
 sign-in, entry-by-entry sync, the backup file, households and automatic releases; 2026-10-21
 for sync on return, snooze ("Not yet"), reminder time and empty-list starters; 2026-10-22
-for the list view (Most urgent / By category).
+for the list view (Most urgent / By category), and for who looks after a shared item
+(migration 005, reminders to that person only, By person).
 Pull directly from code — no assumptions.*

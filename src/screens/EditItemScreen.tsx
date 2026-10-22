@@ -14,7 +14,13 @@ import { palette, fonts, TAP } from '../theme/tokens';
 import ItemForm, { ItemFormValues } from '../components/ItemForm';
 import { useToast } from '../components/Toast';
 import { useHousehold } from '../components/useHousehold';
-import { canChangeSharing, canDelete } from '../domain/household/service';
+import {
+  canChangeSharing,
+  canDelete,
+  canChooseWhoLooksAfter,
+  lookAfterChoices,
+  lookedAfterBy,
+} from '../domain/household/service';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Edit'>;
 type Route = RouteProp<RootStackParamList, 'Edit'>;
@@ -39,11 +45,14 @@ export default function EditItemScreen() {
         repeatValue: derived.repeatValue,
         repeatUnit: derived.repeatUnit,
         shared: !!derived.householdId,
+        lookedAfterBy: lookedAfterBy(derived),
       });
     })();
   }, [itemId, navigation]);
 
   const sharing = item && household.household && canChangeSharing(item, household) ? household.household : null;
+  // Any member, on a shared item; its creator also while making it shared
+  const offerLookAfter = !!item && (canChooseWhoLooksAfter(item, household) || sharing !== null);
 
   async function handleSave({ shared, ...values }: ItemFormValues) {
     try {
@@ -93,6 +102,7 @@ export default function EditItemScreen() {
       dateHelp="This is your latest entry. Older ones are on the item screen."
       onSubmit={handleSave}
       householdName={sharing?.name}
+      lookAfter={offerLookAfter ? { choices: lookAfterChoices(household), me: household.userId } : undefined}
       footer={item && !canDelete(item, household) ? undefined : (
         <TouchableOpacity
           style={styles.deleteBtn}

@@ -23,7 +23,7 @@ import {
 } from '../theme/tokens';
 import CategoryTile from './CategoryTile';
 import StatusChip from './StatusChip';
-import { isShared } from '../domain/household/rules';
+import { isShared, LOOK_AFTER_COPY } from '../domain/household/rules';
 import { snoozeNote } from '../domain/snooze/rules';
 
 interface Props {
@@ -36,9 +36,11 @@ interface Props {
   onPress?: (item: SinceItem) => void;
   /** The day this phone's snooze ends, while snoozed. */
   snoozedUntil?: string | null;
+  /** Who looks after it, as shown ("You" or a name); absent for Anyone. */
+  lookedAfter?: string | null;
 }
 
-export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress, snoozedUntil }: Props) {
+export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress, snoozedUntil, lookedAfter }: Props) {
   const status = computeItemStatus(item);
   const snoozed = snoozeNote(snoozedUntil, new Date());
   const { label, daysSince } = status;
@@ -133,6 +135,19 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress, 
                 <Text style={type.secondary}>{lastDoneText(daysSince)}</Text>
                 {isShared(item) && (
                   <Text style={styles.householdTag} testID={`item-${item.name}-household-tag`}>Household</Text>
+                )}
+                {isShared(item) && lookedAfter && (
+                  <Text
+                    style={styles.householdTag}
+                    testID={`item-${item.name}-looked-after-tag`}
+                    accessibilityLabel={
+                      lookedAfter === LOOK_AFTER_COPY.you
+                        ? LOOK_AFTER_COPY.youLookAfter
+                        : LOOK_AFTER_COPY.theyLookAfter(lookedAfter)
+                    }
+                  >
+                    {lookedAfter}
+                  </Text>
                 )}
               </View>
             </View>

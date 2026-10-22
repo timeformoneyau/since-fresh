@@ -413,6 +413,14 @@ describe('list view, kept beside the list on this phone', () => {
     }
   });
 
+  test('"By person" is saved in the same format (version 1); builds before it read it as "Most urgent"', () => {
+    const raw = serializeListView('person');
+    assert.deepEqual(JSON.parse(raw), { version: 1, view: 'person' });
+    assert.equal(parseListView(raw), 'person');
+    // An older build only knows urgent and category: its unknown-value rule
+    // (above, 'alphabetical') makes this Most urgent after a rollback
+  });
+
   test('a choice saved by a newer build with extra fields still loads', () => {
     assert.equal(parseListView(JSON.stringify({ version: 2, view: 'category', collapsed: ['Auto'] })), 'category');
   });

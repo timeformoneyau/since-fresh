@@ -15,12 +15,23 @@ import {
   gapsNewestFirst,
   HistoryError,
   refreshReminders,
+  setLookedAfterBy,
   snoozeItem,
   clearSnooze,
 } from '../domain/items/service';
 import { canSnooze, snoozeNote, SNOOZE_OPTIONS, type SnoozeOption } from '../domain/snooze/rules';
 import { useHousehold } from '../components/useHousehold';
-import { doneBy, isMuted, isShared, setRemindMe, householdErrorMessage } from '../domain/household/service';
+import {
+  doneBy,
+  isMuted,
+  isShared,
+  setRemindMe,
+  householdErrorMessage,
+  canChooseWhoLooksAfter,
+  lookAfterChoices,
+  lookedAfterBy,
+  LOOK_AFTER_COPY,
+} from '../domain/household/service';
 import {
   repeatText,
   daysAgoText,
@@ -46,6 +57,7 @@ import { useToast } from '../components/Toast';
 import CategoryTile from '../components/CategoryTile';
 import StatusChip from '../components/StatusChip';
 import DatePickerModal from '../components/DatePickerModal';
+import LookAfterChoices from '../components/LookAfterChoices';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Detail'>;
 type Route = RouteProp<RootStackParamList, 'Detail'>;
@@ -61,6 +73,7 @@ export default function DetailScreen() {
   const [item, setItem] = useState<DerivedItem | null>(null);
   const [pickingPastDate, setPickingPastDate] = useState(false);
   const [changingRemind, setChangingRemind] = useState(false);
+  const [changingLookAfter, setChangingLookAfter] = useState(false);
   const [choosingSnooze, setChoosingSnooze] = useState(false);
   const household = useHousehold();
   const showToast = useToast();
@@ -75,6 +88,20 @@ export default function DetailScreen() {
       showToast({ message: householdErrorMessage(e) });
     } finally {
       setChangingRemind(false);
+    }
+  }
+
+  async function handleLookAfter(userId: string | null) {
+    if (!item) return;
+    setChangingLookAfter(true);
+    try {
+      // Saved straight away, like "Remind me about this"; reminders re-planned
+      await setLookedAfterBy(item.id, userId);
+      await refresh();
+    } catch {
+      showToast({ message: "Couldn't save that. Please try again." });
+    } finally {
+      setChangingLookAfter(false);
     }
   }
 
@@ -269,6 +296,21 @@ export default function DetailScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Who looks after this? (shared items: any member can choose) */}
+        {canChooseWhoLooksAfter(item, household) && (
+          <View style={styles.card} testID="detail-look-after">
+            <Text style={[styles.entryDate, styles.lookAfterHeading]}>{LOOK_AFTER_COPY.question}</Text>
+            <LookAfterChoices
+              prefix="detail"
+              choices={lookAfterChoices(household)}
+              me={household.userId}
+              value={lookedAfterBy(item)}
+              onChange={handleLookAfter}
+              disabled={changingLookAfter}
+            />
+          </View>
+        )}
 
         {/* Remind me about this (shared items: each member's own choice) */}
         {isShared(item) && household.household && (
@@ -510,6 +552,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     padding: space.cardPadding,
   },
+  lookAfterHeading: { marginBottom: 10 },
   remindRow: { flexDirection: 'row', alignItems: 'center', gap: 12, justifyContent: 'space-between' },
   entryCard: { flexDirection: 'row', alignItems: 'center', gap: 12, justifyContent: 'space-between' },
   entryDate: { fontFamily: fonts.bold, fontSize: 16.5, color: palette.ink },
