@@ -8,6 +8,8 @@ import { createItem } from '../../domain/items/service';
 type ReactTestInstance = ReturnType<typeof screen.getByTestId>;
 
 const VIEW_KEY = '@since_list_view_v1';
+/** The first render after seeding can be slow on CI; later finds keep the default. */
+const FIRST = { timeout: 5000 };
 const ymd = (d: Date) => format(d, 'yyyy-MM-dd');
 const ago = (days: number) => ymd(subDays(new Date(), days));
 
@@ -31,7 +33,7 @@ function order(): string[] {
 
 async function openList() {
   render(<App />);
-  await screen.findByTestId('item-Rego');
+  await screen.findByTestId('item-Rego', {}, FIRST);
 }
 
 it('starts as "Most urgent": one list, no headings, as before', async () => {
@@ -68,7 +70,7 @@ it('remembers the choice on this phone', async () => {
   screen.unmount();
 
   render(<App />);
-  expect(await screen.findByTestId('group-Auto')).toBeTruthy();
+  expect(await screen.findByTestId('group-Auto', {}, FIRST)).toBeTruthy();
   expect(screen.getByTestId('main-view-category').props.accessibilityState).toEqual({ selected: true });
 });
 
@@ -95,7 +97,7 @@ it('items in any category appear, including old "Food" items and ones with none'
   await AsyncStorage.setItem(VIEW_KEY, JSON.stringify({ version: 1, view: 'category' }));
 
   render(<App />);
-  expect(await screen.findByTestId('group-Food')).toBeTruthy();
+  expect(await screen.findByTestId('group-Food', {}, FIRST)).toBeTruthy();
   expect(screen.getByTestId('group-No category')).toBeTruthy();
   expect(screen.getByTestId('item-Milk')).toBeTruthy();
   expect(screen.getByTestId('item-Mystery')).toBeTruthy();
@@ -105,7 +107,7 @@ it('mark done and Undo work in the grouped view', async () => {
   await seed();
   await AsyncStorage.setItem(VIEW_KEY, JSON.stringify({ version: 1, view: 'category' }));
   render(<App />);
-  fireEvent.press(await screen.findByTestId('item-Rego-done'));
+  fireEvent.press(await screen.findByTestId('item-Rego-done', {}, FIRST));
   expect(await screen.findByText('Rego marked as done')).toBeTruthy();
   // Rego is no longer urgent, so Household now leads
   await waitFor(() => expect(order()[0]).toBe('group-Household'));
@@ -123,7 +125,7 @@ it('combines with the household filter', async () => {
   await createItem({ name: 'Bins', category: 'Household', lastDoneDate: ago(1), repeatValue: 1, repeatUnit: 'weeks', householdId: 'home' });
   await AsyncStorage.setItem(VIEW_KEY, JSON.stringify({ version: 1, view: 'category' }));
   render(<App />);
-  await screen.findByTestId('group-Auto');
+  await screen.findByTestId('group-Auto', {}, FIRST);
 
   fireEvent.press(screen.getByTestId('main-filter-household'));
   await waitFor(() => expect(order()).toEqual(['group-Household', 'item-Bins']));
