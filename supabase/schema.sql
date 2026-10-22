@@ -5,7 +5,8 @@
 -- the changes in supabase/migrations/ instead (002_composite_keys.sql moves
 -- items to the (user_id, id) key and drops the food-tracking columns;
 -- 003_history_table.sql adds completion_events, server_updated_at and kind;
--- 004_households.sql adds shared households).
+-- 004_households.sql adds shared households; 005_looked_after_by.sql adds who
+-- looks after a shared item).
 -- supabase/tests/ checks that both routes end in the same schema.
 --
 -- Mirrors the SinceItem model in src/types/index.ts. items.history holds the
@@ -679,3 +680,56 @@ grant execute on function
   public.transfer_ownership(uuid), public.delete_household(), public.delete_user(),
   public.my_household_id()
 to authenticated;
+
+-- ════ Who looks after a shared item (migration 005) ═════════════════════════
+-- null is "Anyone". Only a member of the item's household; clears when their
+-- membership ends or the item stops being shared. Needs Postgres 15+.
+
+alter table public.items
+  add column if not exists looked_after_by uuid;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.items'::regclass and conname = 'items_looked_after_by_needs_household'
+  ) then
+    alter table public.items
+      add constraint items_looked_after_by_needs_household
+        check (looked_after_by is null or household_id is not null);
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.items'::regclass and conname = 'items_looked_after_by_fkey'
+  ) then
+    alter table public.items
+      add constraint items_looked_after_by_fkey foreign key (household_id, looked_after_by)
+        references public.household_members (household_id, user_id)
+        on delete set null (looked_after_by);
+  end if;
+end $$;
+
+-- For the foreign key: finding a leaving member's items
+create index if not exists items_looked_after_by_idx
+  on public.items (household_id, looked_after_by) where looked_after_by is not null;
+
+-- An item that changes household (to "Just me", or handed back when its
+-- household goes) loses whoever looked after it, unless the same write set
+-- it. Runs for every write, including the membership functions'.
+create or replace function public.items_looked_after_by_before_write()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.household_id is distinct from old.household_id
+     and new.looked_after_by is not distinct from old.looked_after_by then
+    new.looked_after_by := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists items_looked_after_by_before_write on public.items;
+create trigger items_looked_after_by_before_write
+  before update on public.items
+  for each row execute function public.items_looked_after_by_before_write();

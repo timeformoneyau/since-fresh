@@ -2,7 +2,7 @@
 # Database tests. Builds the schema two ways, checks they end the same, and
 # runs the access-rule tests against each:
 #   - fresh:   a new project (supabase/schema.sql)
-#   - upgrade: an existing project (the schema before 003, then 003, 004)
+#   - upgrade: an existing project (the schema before 003, then 003, 004, 005)
 # Each migration is applied twice, to prove re-running it changes nothing.
 #
 # Needs a Postgres superuser, given by the usual PG* environment variables.
@@ -52,7 +52,8 @@ fresh=$(describe since_test_fresh)
 newdb since_test_upgrade
 apply since_test_upgrade supabase_stub.sql fixtures/schema_before_003.sql \
   ../migrations/003_history_table.sql ../migrations/003_history_table.sql \
-  ../migrations/004_households.sql ../migrations/004_households.sql
+  ../migrations/004_households.sql ../migrations/004_households.sql \
+  ../migrations/005_looked_after_by.sql ../migrations/005_looked_after_by.sql
 
 if ! diff <(echo "$fresh") <(describe since_test_upgrade); then
   echo "FAILED: a fresh project and an upgraded one end with different schemas (diff above)"
@@ -62,12 +63,13 @@ echo "ok   a fresh project and an upgraded one end with the same schema"
 
 # Running the migrations on a project that already has them (or was set up
 # fresh) is harmless
-apply since_test_fresh ../migrations/003_history_table.sql ../migrations/004_households.sql
+apply since_test_fresh ../migrations/003_history_table.sql ../migrations/004_households.sql \
+  ../migrations/005_looked_after_by.sql
 if ! diff <(echo "$fresh") <(describe since_test_fresh); then
-  echo "FAILED: re-running migrations 003 and 004 changed the schema (diff above)"
+  echo "FAILED: re-running migrations 003 to 005 changed the schema (diff above)"
   exit 1
 fi
-echo "ok   re-running migrations 003 and 004 changes nothing"
+echo "ok   re-running migrations 003 to 005 changes nothing"
 
 # Each test file runs on a fresh copy of both schemas, so tests can't
 # depend on each other's rows
