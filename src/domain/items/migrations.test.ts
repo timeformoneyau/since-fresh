@@ -10,6 +10,7 @@ import { parseAndMigrate, toEnvelope, STORAGE_VERSION } from './migrations.ts';
 import { mergeItems, type CloudEntry } from '../sync/runSync.ts';
 import { parseSnoozes, serializeSnoozes, makeSnooze } from '../snooze/rules.ts';
 import { parseReminderTime, serializeReminderTime } from '../../notifications/reminderTime.ts';
+import { parseListView, serializeListView } from '../listView/rules.ts';
 
 const base = {
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -346,5 +347,36 @@ describe('starters on an empty list', () => {
       repeatUnit: 'months' as const,
     };
     assert.deepEqual(parseAndMigrate(toEnvelope([fromStarter])), [fromStarter]);
+  });
+});
+
+describe('list view, kept beside the list on this phone', () => {
+  // Its own key (@since_list_view_v1); the list's stored shape is unchanged.
+  test('nothing saved yet (every phone before this build) is "Most urgent", as before', () => {
+    assert.equal(parseListView(null), 'urgent');
+  });
+
+  test('a saved choice round trips', () => {
+    assert.equal(parseListView(serializeListView('category')), 'category');
+    assert.equal(parseListView(serializeListView('urgent')), 'urgent');
+  });
+
+  test('unreadable or unknown values fall back to "Most urgent"', () => {
+    for (const raw of ['nope', '{}', 'null', JSON.stringify({ version: 1, view: 'alphabetical' }), JSON.stringify({ view: 3 })]) {
+      assert.equal(parseListView(raw), 'urgent', raw);
+    }
+  });
+
+  test('a choice saved by a newer build with extra fields still loads', () => {
+    assert.equal(parseListView(JSON.stringify({ version: 2, view: 'category', collapsed: ['Auto'] })), 'category');
+  });
+
+  test('a list with items in any category loads unchanged', () => {
+    const items = ['Household', 'Food', 'Marine', ''].map((category, i) => ({
+      ...base, id: `i${i}`, name: `Item ${i}`, category,
+      lastDoneDate: '2026-10-01', history: [{ id: `e${i}`, date: '2026-10-01' }],
+      repeatValue: null, repeatUnit: null,
+    }));
+    assert.deepEqual(parseAndMigrate(toEnvelope(items)), items);
   });
 });

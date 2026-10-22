@@ -1,0 +1,26 @@
+appId: com.since.app
+name: View - switch the list to By category, see a heading, switch back
+---
+- runFlow: subflows/launch.yaml
+- runFlow:
+    file: subflows/add-first-item.yaml
+    env:
+      NAME: "Passport"
+- assertVisible:
+    id: "main-view-urgent"
+- tapOn:
+    id: "main-view-category"
+# Once-off items keep the category chosen on Add (Other by default)
+- extendedWaitUntil:
+    visible:
+      id: "group-Other"
+    timeout: 10000
+- assertVisible:
+    id: "item-Passport"
+- takeScreenshot: 14-by-category
+- tapOn:
+    id: "main-view-urgent"
+- assertNotVisible:
+    id: "group-Other"
+- assertVisible:
+    id: "item-Passport"

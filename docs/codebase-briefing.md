@@ -46,7 +46,7 @@ deferred, not ported.
   (changes waiting to sync), `@since_sync_cursor_v1`, `@since_last_synced_v1`, `@since_owner_v1`
   (which account owns this phone's list), `@since_household_v1` (cached household),
   `@since_snoozes_v1` (snoozes, this phone only), `@since_reminder_time_v1` (reminder time,
-  this phone only).
+  this phone only), `@since_list_view_v1` (list view, this phone only).
 - **Supabase** (`@supabase/supabase-js`) for the optional account (emailed code), sync and
   households. Absent credentials means the app runs purely local-only, with no sign-in.
 - **expo-notifications** for **local** (not push) reminders.
@@ -136,10 +136,15 @@ offers a backup file: export a JSON file through the share sheet, or restore one
 what's missing (`domain/backup/backup.ts`). Sign-in is by emailed code only,
 no passwords (`domain/auth/codes.ts`); the same code creates an account for a new address.
 
-- **Main** (`MainListScreen`) — one `FlatList`, sorted most-urgent-first (`sortItems`). Each
+- **Main** (`MainListScreen`) — one `FlatList`, sorted most-urgent-first (`sortItems`). A
+  **View** row under the summary card switches between **Most urgent** (the default: one
+  list) and **By category** (the same order under category headings with a count; groups come
+  in the order of their most urgent item; any category, including old "Food" items, gets its
+  own heading, and an empty one shows as "No category"). The choice is remembered on the phone
+  (`domain/listView/`); a missing or unreadable value means Most urgent. Each
   `ItemCard` has a "Done" button (marks done today), Edit and Delete buttons, a progress bar
   through the interval, and a Household tag on shared items. In a household, an
-  All / Just me / Household filter sits above the list. Done and Delete each show a toast with **Undo**
+  All / Just me / Household filter sits below the View row and combines with either view. Done and Delete each show a toast with **Undo**
   (`undoMarkDone` / `restoreDeletedItem` in `service.ts`; a restored item takes a new id
   because the old one is tombstoned in the cloud). A one-line `SystemStatus` summary sits under the header
   ("All good. Nothing needs attention." / "A few things might need attention." …). Header has
@@ -252,6 +257,7 @@ src/
     suggestions.ts        keyword → repeat-interval rules (14, English-only); the 8 starters come
                           from the same table
   domain/snooze/          rules.ts (pure: when offered, how long, when it ends), store.ts
+  domain/listView/        rules.ts (pure: Most urgent / By category, grouping), store.ts
   notifications/
     plan.ts               ⭐ what to schedule and when: lifecycle, grouped overdue, snoozes,
                              reminder time, per-day cap (pure, tested)
@@ -310,8 +316,8 @@ scheduling and sync in step.
 - **No iOS path exercised** (package/bundle id `com.since.app`; EAS project `since-fresh`, 3c35d81c).
 - **Suggestions are English keyword-only**, 14 hardcoded rules (8 of them are also the
   empty-list starters). Gaps are neutral memory aids, not advice.
-- **Snoozes and the reminder time live on one phone only.** Not synced and not in the backup
-  file; a second phone has its own.
+- **Snoozes, the reminder time and the list view live on one phone only.** Not synced and not
+  in the backup file; a second phone has its own.
 - **No dark mode.**
 - **Not built yet, by design:** notifications about other members' actions, live updates,
   iOS / Sign in with Apple, more than one household per person, assigning items to a person,
@@ -338,5 +344,6 @@ scheduling and sync in step.
 *Generated 2026-06-29. Updated 2026-08-22 for the since/since-fresh consolidation; 2026-10-02 to
 reflect the secret move, tests and committed Supabase config; 2026-10-20 for emailed-code
 sign-in, entry-by-entry sync, the backup file, households and automatic releases; 2026-10-21
-for sync on return, snooze ("Not yet"), reminder time and empty-list starters.
+for sync on return, snooze ("Not yet"), reminder time and empty-list starters; 2026-10-22
+for the list view (Most urgent / By category).
 Pull directly from code — no assumptions.*
