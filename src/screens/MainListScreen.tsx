@@ -33,16 +33,33 @@ import SystemStatus from '../components/SystemStatus';
 import LogoMark from '../components/LogoMark';
 import { useHousehold } from '../components/useHousehold';
 import { useSyncOnResume } from '../components/useSyncOnResume';
+import { groupByCategory, LIST_VIEWS, DEFAULT_LIST_VIEW, type ListView } from '../domain/listView/rules';
+import { loadListView, saveListView } from '../domain/listView/store';
 import { filterItems, canDelete, type ListFilter } from '../domain/household/service';
 import { colours, palette, fonts, type, radius, space, TAP } from '../theme/tokens';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
+
+/** A row of the list: an item, or (By category) a category heading. */
+type Row =
+  | { kind: 'item'; item: DerivedItem }
+  | { kind: 'heading'; title: string; count: number };
+
+function toRows(sorted: DerivedItem[], view: ListView): Row[] {
+  if (view === 'urgent') return sorted.map((item) => ({ kind: 'item', item }));
+  return groupByCategory(sorted).flatMap((g): Row[] => [
+    { kind: 'heading', title: g.title, count: g.items.length },
+    ...g.items.map((item): Row => ({ kind: 'item', item })),
+  ]);
+}
 
 export default function MainListScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<DerivedItem[]>([]);
   const [filter, setFilter] = useState<ListFilter>('all');
+  // Remembered on this phone; "Most urgent" until read, or if unreadable
+  const [view, setView] = useState<ListView>(DEFAULT_LIST_VIEW);
   const household = useHousehold();
   const showToast = useToast();
   // The filter only exists while in a household
@@ -66,6 +83,15 @@ export default function MainListScreen() {
 
   // Back from the background: fresh dates, then a quiet sync
   useSyncOnResume(refresh, refresh, (message) => showToast({ message }));
+
+  useEffect(() => {
+    loadListView().then(setView).catch(() => {});
+  }, []);
+
+  function chooseView(next: ListView) {
+    setView(next);
+    saveListView(next).catch(() => {});
+  }
 
   // Picks up undo actions taken from a toast while this screen is showing
   useEffect(() => onItemsChanged(refresh), [refresh]);
@@ -207,14 +233,28 @@ export default function MainListScreen() {
   return (
     <View style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={palette.navy} />
-      <FlatList<DerivedItem>
-        data={sortItems(shown) as DerivedItem[]}
-        keyExtractor={(item) => item.id}
+      <FlatList<Row>
+        data={toRows(sortItems(shown) as DerivedItem[], view)}
+        keyExtractor={(row) => (row.kind === 'item' ? row.item.id : `heading-${row.title}`)}
         ListHeaderComponent={
           <>
             {header}
             <View style={styles.summaryOverlap}>
               <SystemStatus items={shown} />
+            </View>
+            <View style={styles.filterRow} accessibilityRole="tablist" accessibilityLabel="View">
+              {LIST_VIEWS.map((v) => (
+                <TouchableOpacity
+                  key={v.key}
+                  style={[styles.filterChip, view === v.key && styles.filterChipOn]}
+                  onPress={() => chooseView(v.key)}
+                  testID={`main-view-${v.key}`}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: view === v.key }}
+                >
+                  <Text style={[styles.filterText, view === v.key && styles.filterTextOn]}>{v.label}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
             {household.household && (
               <View style={styles.filterRow} accessibilityRole="tablist">
@@ -236,14 +276,24 @@ export default function MainListScreen() {
             )}
           </>
         }
-        renderItem={({ item }) => (
+        renderItem={({ item: row }) => row.kind === 'heading' ? (
+          <View
+            style={styles.groupHeading}
+            testID={`group-${row.title}`}
+            accessibilityRole="header"
+            accessibilityLabel={`${row.title}, ${row.count} ${row.count === 1 ? 'item' : 'items'}`}
+          >
+            <Text style={styles.groupTitle}>{row.title}</Text>
+            <Text style={styles.groupCount}>{row.count}</Text>
+          </View>
+        ) : (
           <ItemCard
-            item={item}
+            item={row.item}
             onMarkDone={handleMarkDone}
             onEdit={handleEdit}
-            onDelete={canDelete(item, household) ? handleDelete : undefined}
+            onDelete={canDelete(row.item, household) ? handleDelete : undefined}
             onPress={handleOpenDetail}
-            snoozedUntil={item.snoozedUntil}
+            snoozedUntil={row.item.snoozedUntil}
           />
         )}
         contentContainerStyle={[styles.list, { paddingBottom: 32 + insets.bottom }]}
@@ -270,6 +320,22 @@ const styles = StyleSheet.create({
   filterChipOn: { backgroundColor: palette.navy },
   filterText: { fontFamily: fonts.semibold, fontSize: 13, color: palette.navy },
   filterTextOn: { color: '#fff' },
+  groupHeading: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginHorizontal: space.screen + 4,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  groupTitle: {
+    fontSize: 12,
+    fontFamily: fonts.semibold,
+    color: palette.muted,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  groupCount: { fontSize: 12, fontFamily: fonts.regular, color: palette.muted },
   safe: {
     flex: 1,
     backgroundColor: colours.background,
