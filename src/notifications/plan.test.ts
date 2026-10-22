@@ -168,3 +168,67 @@ describe('snooze', () => {
     assert.ok(!planNotifications([overdue], { now: later, snoozes: s }).some((n) => n.identifier.endsWith('snooze_end')));
   });
 });
+
+describe('who looks after a shared item', () => {
+  const ME = 'user-me';
+  const SAM = 'user-sam';
+  const shared = (id: string, lookedAfterBy?: string | null, lastDone = '2026-10-01'): SinceItem => ({
+    ...item(id, lastDone),
+    householdId: 'home',
+    ...(lookedAfterBy !== undefined ? { lookedAfterBy } : {}),
+  });
+  // The items reminded about, by name (grouped notices left out)
+  const ids = (ns: PlannedNotification[]) =>
+    [...new Set(ns.filter((n) => !n.identifier.includes('grouped')).map((n) => n.identifier.split('_')[1]))].sort();
+
+  test('nobody chosen (Anyone): every member is reminded, as before', () => {
+    const anyone = [shared('Bins'), shared('Gutters', null)];
+    assert.deepEqual(summary(planNotifications(anyone, { now: NOW, me: ME })), summary(planNotifications(anyone, { now: NOW })));
+    assert.deepEqual(ids(planNotifications(anyone, { now: NOW, me: SAM })), ['Bins', 'Gutters']);
+  });
+
+  test('someone chosen: only they are reminded', () => {
+    const mine = shared('Bins', ME);
+    const sams = shared('Gutters', SAM);
+    assert.deepEqual(ids(planNotifications([mine, sams], { now: NOW, me: ME })), ['Bins']);
+    assert.deepEqual(ids(planNotifications([mine, sams], { now: NOW, me: SAM })), ['Gutters']);
+  });
+
+  test('my reminders for what I look after are the same as for my own items', () => {
+    const plan = planNotifications([shared('Dentist', ME)], { now: NOW, me: ME });
+    assert.deepEqual(summary(plan), summary(planNotifications([item('Dentist', '2026-10-01')], { now: NOW })));
+  });
+
+  test("someone else's items aren't counted in my grouped notices", () => {
+    // All three due 1 Oct, so grouped from 22 Oct; Sam looks after two of them
+    const items = [shared('A', null, '2026-09-01'), shared('B', SAM, '2026-09-01'), shared('C', SAM, '2026-09-01')];
+    const grouped = planNotifications(items, { now: NOW, me: ME }).filter((n) => n.identifier.includes('grouped'));
+    assert.ok(grouped.length > 0);
+    assert.ok(grouped.every((n) => n.body === 'Something might need your attention'));
+    const samsGrouped = planNotifications(items, { now: NOW, me: SAM }).filter((n) => n.identifier.includes('grouped'));
+    assert.ok(samsGrouped.some((n) => n.body === '3 things might need attention'));
+  });
+
+  test("someone else's items take no place in my 2-a-day cap", () => {
+    // Four items due on 1 Nov: two of Sam's, two Anyone. Mine both fit.
+    const items = [shared('S1', SAM), shared('S2', SAM), shared('A1'), shared('A2')];
+    const due = planNotifications(items, { now: NOW, me: ME }).filter((n) => when(n).startsWith('2026-11-01'));
+    assert.deepEqual(due.map((n) => n.identifier).sort(), ['since_A1_due', 'since_A2_due']);
+  });
+
+  test('a Just me item is always reminded, whatever is left in the field', () => {
+    const leftover: SinceItem = { ...item('Passport', '2026-10-01'), lookedAfterBy: SAM };
+    assert.deepEqual(ids(planNotifications([leftover], { now: NOW, me: ME })), ['Passport']);
+  });
+
+  test('with no account known, every item is reminded (never quiet by mistake)', () => {
+    assert.deepEqual(ids(planNotifications([shared('Bins', SAM)], { now: NOW, me: null })), ['Bins']);
+  });
+
+  test('handing an item over changes the plan straight away', () => {
+    const before = planNotifications([shared('Bins', null)], { now: NOW, me: ME });
+    const after = planNotifications([shared('Bins', SAM)], { now: NOW, me: ME });
+    assert.ok(before.length > 0);
+    assert.equal(after.length, 0);
+  });
+});

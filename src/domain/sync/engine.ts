@@ -28,7 +28,8 @@ import { isCloudSyncConfigured, getSupabase } from '../../lib/supabase';
 import { loadQueue, removeFromQueue, enqueueUpsert, clearQueue, forgetQueuedItems } from './queue';
 import { fetchHousehold, fetchSharedItemKeys } from '../household/cloud';
 import { loadHouseholdState, saveHouseholdState, clearHouseholdState } from '../household/store';
-import { householdChange, afterLeaving, noLongerShared } from '../household/rules';
+import type { Household } from '../household/rules';
+import { householdChange, afterLeaving, noLongerShared, withoutStaleLookedAfter } from '../household/rules';
 import { loadOwner, saveOwner, clearOwner } from './owner';
 import {
   rescheduleAllNotifications,
@@ -136,6 +137,18 @@ async function dropItems(ids: string[]): Promise<void> {
 }
 
 /**
+ * Someone chosen to look after an item who has since left goes back to
+ * Anyone (the server has already cleared it). Without this, a change still
+ * queued here would name a non-member, which the server refuses on every
+ * sync. Reminders are re-planned after the sync that follows.
+ */
+async function clearStaleLookedAfter(household: Household | null): Promise<void> {
+  const items = await loadItems();
+  const cleared = new Map(withoutStaleLookedAfter(items, household).map((i) => [i.id, i]));
+  if (cleared.size > 0) await saveItems(items.map((i) => cleared.get(i.id) ?? i));
+}
+
+/**
  * Before each sync: look at the household again and apply what changed
  * (household/rules.ts). Leaving takes the household's items off this phone;
  * joining pulls everything again; an item its creator made personal again
@@ -157,6 +170,7 @@ async function refreshHousehold(): Promise<void> {
     if (household) {
       await dropItems(noLongerShared(await loadItems(), household.id, await fetchSharedItemKeys(household.id), userId));
     }
+    await clearStaleLookedAfter(household);
     if (change.pullEverything) await clearCursor();
     await saveHouseholdState({ userId, household, mutes });
   } catch {

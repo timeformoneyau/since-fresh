@@ -21,6 +21,12 @@
  *     - On the day it ends: one normal reminder at the usual time
  *     - After that the usual schedule carries on (7-day overdue, grouped)
  *
+ *   Shared items (households):
+ *     - Nobody chosen ("Anyone"): reminded on every member's phone, as before
+ *     - Someone chosen: only on that person's phone. Everyone else gets
+ *       nothing for it, and it isn't counted in their grouped notices or cap
+ *     - A member's "Remind me about this" mute is applied before this (scheduler.ts)
+ *
  *   Daily cap:
  *     - No more than MAX_PER_DAY notifications on any single calendar day
  *     - When multiple notifications compete for a day, higher priority wins
@@ -43,6 +49,7 @@ import {
   parseDate,
 } from '../utils/dateUtils.ts';
 import { activeSnoozeUntil, type Snoozes } from '../domain/snooze/rules.ts';
+import { lookedAfterBy } from '../domain/household/rules.ts';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -93,6 +100,8 @@ export interface PlanOptions {
   now: Date;
   time?: ReminderTime;
   snoozes?: Snoozes;
+  /** The signed-in account. Null or absent: no account, so every item is this phone's to remind. */
+  me?: string | null;
 }
 
 // ─── Utility helpers ──────────────────────────────────────────────────────────
@@ -270,14 +279,29 @@ function buildGroupedNotifications(items: SinceItem[], opts: PlanOptions): Plann
   return results;
 }
 
+// ─── Who is reminded ──────────────────────────────────────────────────────────
+
+/**
+ * Whether this phone reminds about the item: always, unless it's a shared
+ * item someone else looks after. With no account known, always (when in
+ * doubt, remind rather than go quiet).
+ */
+export function remindsMe(item: SinceItem, me: string | null | undefined): boolean {
+  const who = lookedAfterBy(item);
+  return who === null || !me || who === me;
+}
+
 // ─── Public ───────────────────────────────────────────────────────────────────
 
 /**
  * Everything that should be scheduled for these items: per-item lifecycle
  * notifications, grouped overdue notices, the daily cap across the lot.
+ * Items someone else looks after are left out first, so they take no part
+ * in grouped counts or the cap.
  */
 export function planNotifications(items: SinceItem[], opts: PlanOptions): PlannedNotification[] {
-  const all = items.flatMap((item) => buildItemNotifications(item, opts));
-  all.push(...buildGroupedNotifications(items, opts));
+  const mine = items.filter((item) => remindsMe(item, opts.me));
+  const all = mine.flatMap((item) => buildItemNotifications(item, opts));
+  all.push(...buildGroupedNotifications(mine, opts));
   return applyDailyCap(all, opts.now);
 }

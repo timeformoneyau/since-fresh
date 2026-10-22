@@ -62,6 +62,79 @@ export function isMuted(item: SinceItem, state: HouseholdState): boolean {
   return isShared(item) && state.mutes.includes(muteKey(item, state.userId));
 }
 
+// ─── Who looks after a shared item (005_looked_after_by.sql) ────────────────
+// Coordination, not permission: any member may choose anyone in the
+// household, or Anyone (null). The server refuses a non-member and a value on
+// an item that isn't shared, so neither is ever offered or queued here.
+
+/** Who looks after the item, or null for Anyone. A personal item never has anyone. */
+export function lookedAfterBy(item: SinceItem): string | null {
+  return isShared(item) && typeof item.lookedAfterBy === 'string' && item.lookedAfterBy.length > 0
+    ? item.lookedAfterBy
+    : null;
+}
+
+/** Any member can say who looks after a shared item of their household. */
+export function canChooseWhoLooksAfter(item: SinceItem, state: HouseholdState): boolean {
+  return state.household !== null && isShared(item) && item.householdId === state.household.id;
+}
+
+/** Whether the server would accept `person` for this item: Anyone, or a member of its household. */
+export function canLookAfter(item: SinceItem, person: string | null, state: HouseholdState): boolean {
+  if (person === null) return true;
+  return canChooseWhoLooksAfter(item, state) && state.household!.members.some((m) => m.userId === person);
+}
+
+export interface LookAfterChoice {
+  /** null is Anyone. */
+  userId: string | null;
+  label: string;
+}
+
+/** "Who looks after this?": Anyone, You, then each other member by name, in joining order. */
+export function lookAfterChoices(state: HouseholdState): LookAfterChoice[] {
+  const others = (state.household?.members ?? []).filter((m) => m.userId !== state.userId);
+  return [
+    { userId: null, label: LOOK_AFTER_COPY.anyone },
+    ...(state.userId && state.household?.members.some((m) => m.userId === state.userId)
+      ? [{ userId: state.userId, label: LOOK_AFTER_COPY.you }]
+      : []),
+    ...others.map((m) => ({ userId: m.userId, label: m.displayName })),
+  ];
+}
+
+export const LOOK_AFTER_COPY = {
+  question: 'Who looks after this?',
+  anyone: 'Anyone',
+  you: 'You',
+  takeIt: "I'll look after this",
+  youLookAfter: 'You look after this',
+  theyLookAfter: (name: string) => `${name} looks after this`,
+} as const;
+
+/** "You" or the member's name, or null when nobody (that this phone knows) is chosen. */
+export function lookedAfterName(item: SinceItem, state: HouseholdState): string | null {
+  const who = lookedAfterBy(item);
+  if (!who) return null;
+  if (who === state.userId) return LOOK_AFTER_COPY.you;
+  return state.household?.members.find((m) => m.userId === who)?.displayName ?? null;
+}
+
+/**
+ * Items whose chosen person the server would no longer accept: they left the
+ * household (the server has already cleared it), or the item isn't shared
+ * any more. Returned with Anyone, so a change still queued on this phone
+ * never sends a person the server would refuse.
+ */
+export function withoutStaleLookedAfter(items: SinceItem[], household: Household | null): SinceItem[] {
+  const members = new Set(household?.members.map((m) => m.userId) ?? []);
+  return items.flatMap((i) => {
+    if (i.lookedAfterBy === undefined || i.lookedAfterBy === null) return [];
+    const ok = isShared(i) && i.householdId === household?.id && members.has(i.lookedAfterBy);
+    return ok ? [] : [{ ...i, lookedAfterBy: null }];
+  });
+}
+
 export type ListFilter = 'all' | 'mine' | 'household';
 
 export function filterItems<T extends SinceItem>(items: T[], filter: ListFilter): T[] {

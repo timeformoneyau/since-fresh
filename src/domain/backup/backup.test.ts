@@ -98,6 +98,20 @@ describe('restoring merges, never replaces', () => {
     assert.equal('householdId' in added, false);
   });
 
+  test('a backup keeps who looks after a shared item; an item added from it has nobody (Just me)', () => {
+    const shared = item('bins', [['e1', '2026-05-01']], { householdId: 'home', lookedAfterBy: 'user-sam' });
+    assert.equal(readBackup(toBackup([shared], NOW))[0].lookedAfterBy, 'user-sam');
+    const [added] = planRestore([], [shared], newId, NOW).added;
+    assert.equal('householdId' in added, false);
+    assert.equal('lookedAfterBy' in added, false);
+  });
+
+  test('an item already here keeps who looks after it, whatever the backup says', () => {
+    const local = [item('bins', [['e2', '2026-10-01']], { householdId: 'home', lookedAfterBy: 'user-me' })];
+    const backup = [item('bins', [['e1', '2026-05-01']], { householdId: 'home', lookedAfterBy: 'user-sam' })];
+    assert.equal(planRestore(local, backup, newId, NOW).extended[0].item.lookedAfterBy, 'user-me');
+  });
+
   test("an item already here gains only the entries it's missing; its fields stay", () => {
     const local = [item('gutters', [['e2', '2026-10-01']], { name: 'Clean gutters' })];
     const backup = [item('gutters', [['e1', '2026-05-01'], ['e2', '2026-10-01']], { name: 'Gutters' })];

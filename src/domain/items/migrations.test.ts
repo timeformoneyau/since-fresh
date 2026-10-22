@@ -270,6 +270,52 @@ describe('households (sync plan, PR 6)', () => {
   });
 });
 
+describe('who looks after a shared item (Shared load)', () => {
+  // One new optional field, lookedAfterBy. Storage version stays 3: lists
+  // saved before load as they were, and builds before it keep the field when
+  // they save (items are loaded and saved whole, unknown fields included).
+  const bins = {
+    ...base,
+    id: 'bins',
+    name: 'Bins',
+    category: 'Household',
+    lastDoneDate: '2026-10-05',
+    history: [{ id: 'e1', date: '2026-10-05' }],
+    repeatValue: 1,
+    repeatUnit: 'weeks' as const,
+    ownerId: 'user-sam',
+    householdId: 'household-home',
+  };
+
+  test('a shared item someone looks after loads unchanged, and saves the same', () => {
+    const looked = { ...bins, lookedAfterBy: 'user-sam' };
+    assert.equal(STORAGE_VERSION, 3);
+    assert.deepEqual(parseAndMigrate(toEnvelope([looked] as never)), [looked]);
+    assert.deepEqual(parseAndMigrate(toEnvelope(parseAndMigrate(toEnvelope([looked] as never)))), [looked]);
+    const anyone = { ...bins, lookedAfterBy: null };
+    assert.deepEqual(parseAndMigrate(toEnvelope([anyone] as never)), [anyone]);
+  });
+
+  test('an item saved by the current app (no field) loads with none', () => {
+    const [loaded] = parseAndMigrate(JSON.stringify({ version: 3, items: [bins] }));
+    assert.equal('lookedAfterBy' in loaded, false);
+    assert.deepEqual(loaded, bins);
+  });
+
+  test("another member's choice arriving by sync replaces this phone's, unless a change is waiting here", () => {
+    const [local] = parseAndMigrate(JSON.stringify({ version: 3, items: [bins] }));
+    const cloud = { ...bins, lookedAfterBy: 'user-me', serverUpdatedAt: '2026-10-06T00:00:00Z' };
+    assert.equal(mergeItems([local], [cloud], new Set())[0].lookedAfterBy, 'user-me');
+
+    const mine = { ...local, lookedAfterBy: 'user-sam' };
+    const pending = { items: new Set(['bins']), entries: new Set<string>(), deletedEntries: new Set<string>() };
+    assert.equal(mergeItems([mine], [cloud], new Set(), [], pending as never)[0].lookedAfterBy, 'user-sam');
+
+    const backToAnyone = { ...cloud, lookedAfterBy: null };
+    assert.equal(mergeItems([mine], [backToAnyone], new Set())[0].lookedAfterBy, null);
+  });
+});
+
 describe('snooze ("Not yet"), kept beside the list on this phone', () => {
   // Snoozes live under their own key (@since_snoozes_v1). The list's stored
   // shape doesn't change, so this build and older ones load it as before.
