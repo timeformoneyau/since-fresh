@@ -16,6 +16,12 @@ import {
   afterLeaving,
   noLongerShared,
   householdChange,
+  lookedAfterBy,
+  canChooseWhoLooksAfter,
+  canLookAfter,
+  lookAfterChoices,
+  lookedAfterName,
+  withoutStaleLookedAfter,
   type HouseholdState,
 } from './rules.ts';
 import type { SinceItem } from '../../types/index.ts';
@@ -154,5 +160,70 @@ describe('when the household changes', () => {
 
   test("another account's cached household is ignored", () => {
     assert.deepEqual(householdChange(before(home, SAM), ME, null), { left: null, pullEverything: false });
+  });
+});
+
+describe('who looks after a shared item (matches 005_looked_after_by.sql)', () => {
+  const OUTSIDER = 'user-outsider';
+  const noHousehold: HouseholdState = { userId: ME, household: null, mutes: [] };
+
+  test('any member can choose, on any shared item of their household', () => {
+    assert.equal(canChooseWhoLooksAfter(mineShared, state('member')), true);
+    assert.equal(canChooseWhoLooksAfter(samsShared, state('member')), true);
+    assert.equal(canChooseWhoLooksAfter(samsShared, state('owner')), true);
+  });
+
+  test('never on a Just me item, another household\'s item, or outside a household', () => {
+    assert.equal(canChooseWhoLooksAfter(mine, state('owner')), false);
+    assert.equal(canChooseWhoLooksAfter(item('elsewhere', { householdId: 'other' }), state('owner')), false);
+    assert.equal(canChooseWhoLooksAfter(mineShared, noHousehold), false);
+  });
+
+  test('a member or Anyone is accepted; an outsider, or anyone on a Just me item, is not', () => {
+    assert.equal(canLookAfter(samsShared, ME, state('member')), true);
+    assert.equal(canLookAfter(samsShared, SAM, state('member')), true);
+    assert.equal(canLookAfter(samsShared, null, state('member')), true);
+    assert.equal(canLookAfter(samsShared, OUTSIDER, state('member')), false);
+    assert.equal(canLookAfter(mine, ME, state('member')), false);
+    assert.equal(canLookAfter(mine, null, state('member')), true);
+  });
+
+  test('the choices are Anyone, You, then each other member', () => {
+    assert.deepEqual(lookAfterChoices(state('member')), [
+      { userId: null, label: 'Anyone' },
+      { userId: ME, label: 'You' },
+      { userId: SAM, label: 'Sam' },
+    ]);
+    assert.deepEqual(lookAfterChoices(noHousehold), [{ userId: null, label: 'Anyone' }]);
+  });
+
+  test('a Just me item never has anyone, even with a value left over (an older build unshared it)', () => {
+    assert.equal(lookedAfterBy(item('x', { lookedAfterBy: SAM })), null);
+    assert.equal(lookedAfterBy(item('x', { householdId: HOME, lookedAfterBy: SAM })), SAM);
+    assert.equal(lookedAfterBy(item('x', { householdId: HOME, lookedAfterBy: null })), null);
+    assert.equal(lookedAfterBy(mineShared), null);
+  });
+
+  test('named as You, by name, or not at all for someone this phone doesn\'t know', () => {
+    assert.equal(lookedAfterName(item('x', { householdId: HOME, lookedAfterBy: ME }), state('member')), 'You');
+    assert.equal(lookedAfterName(item('x', { householdId: HOME, lookedAfterBy: SAM }), state('member')), 'Sam');
+    assert.equal(lookedAfterName(item('x', { householdId: HOME, lookedAfterBy: OUTSIDER }), state('member')), null);
+    assert.equal(lookedAfterName(mineShared, state('member')), null);
+  });
+
+  test('someone who left, or a value on an item no longer shared, goes back to Anyone', () => {
+    const home = state('member').household;
+    const items = [
+      item('sam', { householdId: HOME, lookedAfterBy: SAM }),
+      item('gone', { householdId: HOME, lookedAfterBy: OUTSIDER }),
+      item('unshared', { lookedAfterBy: SAM }),
+      item('anyone', { householdId: HOME, lookedAfterBy: null }),
+      item('old', { householdId: HOME }),
+    ];
+    assert.deepEqual(
+      withoutStaleLookedAfter(items, home).map((i) => [i.id, i.lookedAfterBy]),
+      [['gone', null], ['unshared', null]],
+    );
+    assert.deepEqual(withoutStaleLookedAfter(items, null).map((i) => i.id), ['sam', 'gone', 'unshared']);
   });
 });

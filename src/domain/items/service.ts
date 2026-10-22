@@ -34,7 +34,7 @@ import {
 
 import { toBackup, readBackup, planRestore, describeRestore } from '../backup/backup';
 import { loadHouseholdState } from '../household/store';
-import { canChangeSharing, canDelete } from '../household/rules';
+import { canChangeSharing, canDelete, canLookAfter, isShared } from '../household/rules';
 import { loadSnoozes, saveSnoozes } from '../snooze/store';
 import { activeSnoozeUntil, canSnooze, makeSnooze, type SnoozeOption } from '../snooze/rules';
 
@@ -135,6 +135,9 @@ export async function clearSnooze(itemId: string): Promise<void> {
   notifyItemsChanged();
 }
 
+/** Refused here, as the server would refuse it (005_looked_after_by.sql). */
+const LOOK_AFTER_REFUSED = 'Only someone in the household can look after a shared item.';
+
 /**
  * Create a new item, persist it, and schedule its notifications.
  *
@@ -155,7 +158,11 @@ export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
     createdAt: now,
     updatedAt: now,
     ...(input.householdId ? { householdId: input.householdId } : {}),
+    ...(input.householdId && input.lookedAfterBy ? { lookedAfterBy: input.lookedAfterBy } : {}),
   };
+  if (!canLookAfter(item, item.lookedAfterBy ?? null, await loadHouseholdState())) {
+    throw new Error(LOOK_AFTER_REFUSED);
+  }
   const all = [...(await loadItems()), item];
   await saveItems(all);
   await rescheduleAllNotifications(all);
@@ -196,6 +203,18 @@ export async function updateItem(itemId: string, updates: UpdateItemInput): Prom
     createdAt: existing.createdAt,
     updatedAt: now,
   };
+  // Just me: nobody looks after it (the server clears it too), and choosing
+  // someone for it is refused
+  if (!isShared(updated)) {
+    if (updates.lookedAfterBy) throw new Error(LOOK_AFTER_REFUSED);
+    if (updated.lookedAfterBy) updated = { ...updated, lookedAfterBy: null };
+  }
+  if (
+    updated.lookedAfterBy !== existing.lookedAfterBy &&
+    !canLookAfter(updated, updated.lookedAfterBy ?? null, await loadHouseholdState())
+  ) {
+    throw new Error(LOOK_AFTER_REFUSED);
+  }
   if (lastDoneDate !== undefined && lastDoneDate !== existing.lastDoneDate) {
     const newest = sortNewestFirst(existing.history)[0];
     updated = updateEntry(updated, newest.id, { date: lastDoneDate }, todayString(), now);
@@ -203,6 +222,15 @@ export async function updateItem(itemId: string, updates: UpdateItemInput): Prom
   }
 
   return persist(items, updated, { fields: true });
+}
+
+/**
+ * Say who looks after a shared item: a member, or null for Anyone. Any member
+ * can, for anyone in the household. Only that person is reminded; it changes
+ * nothing else about the item.
+ */
+export async function setLookedAfterBy(itemId: string, userId: string | null): Promise<DerivedItem> {
+  return updateItem(itemId, { lookedAfterBy: userId });
 }
 
 /**

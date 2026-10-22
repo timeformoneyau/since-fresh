@@ -20,7 +20,8 @@ import { loadReminderTime } from './reminderTimeStore';
  * Reschedule every reminder for the list as it now stands.
  *
  * Shared items are reminded on every member's phone, except where that
- * member turned "Remind me about this" off (households). Snoozed items wait
+ * member turned "Remind me about this" off (households), or someone else
+ * looks after the item (plan.ts). Snoozed items wait
  * until their snooze ends. All go out at the chosen reminder time (9 am
  * unless changed). The daily cap applies to everything together.
  *
@@ -38,6 +39,7 @@ export async function rescheduleAllNotifications(items: SinceItem[]): Promise<vo
   await engine.rescheduleAllNotifications(items.filter((i) => !isMuted(i, state)), {
     snoozes,
     time: await loadReminderTime(),
+    me: state.userId,
   });
 }
 

@@ -41,6 +41,12 @@ export interface SinceItem {
   ownerId?: string;
   /** The household the item is shared with; absent or null means just me. */
   householdId?: string | null;
+  /**
+   * The member who looks after a shared item, so only they are reminded.
+   * Absent or null means Anyone (every member is reminded). Only meaningful
+   * on a shared item; household/rules.ts lookedAfterBy() ignores it otherwise.
+   */
+  lookedAfterBy?: string | null;
 }
 
 export type StatusLabel =

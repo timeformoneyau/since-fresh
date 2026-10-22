@@ -11,8 +11,9 @@ import { SinceItem, CompletionEvent, RepeatUnit } from '../../types';
 import { requireSupabase } from '../../lib/supabase';
 import type { CloudItem, CloudEntry, EntryPush, EntryRow } from '../sync/runSync';
 import { serverTimeMs } from '../sync/runSync';
+import { lookedAfterBy } from '../household/rules';
 
-interface ItemRow {
+export interface ItemRow {
   id: string;
   user_id: string;
   name: string;
@@ -27,6 +28,8 @@ interface ItemRow {
   server_updated_at?: string;
   /** Migration 004: the household it's shared with, or null. */
   household_id?: string | null;
+  /** Migration 005: the member who looks after it, or null for Anyone. */
+  looked_after_by?: string | null;
 }
 
 interface EntryDbRow {
@@ -46,7 +49,7 @@ interface EntryDbRow {
  * household member's shared item); this account's items carry none, like
  * items made on the phone.
  */
-function rowToItem(row: ItemRow, me: string): CloudItem {
+export function rowToItem(row: ItemRow, me: string): CloudItem {
   return {
     id: row.id,
     name: row.name,
@@ -60,6 +63,7 @@ function rowToItem(row: ItemRow, me: string): CloudItem {
     ...(row.server_updated_at ? { serverUpdatedAt: row.server_updated_at } : {}),
     ...(row.user_id !== me ? { ownerId: row.user_id } : {}),
     ...(row.household_id !== undefined ? { householdId: row.household_id } : {}),
+    ...(row.looked_after_by !== undefined ? { lookedAfterBy: row.looked_after_by } : {}),
   };
 }
 
@@ -118,14 +122,18 @@ async function allPages<T>(
 
 /**
  * A shared item keeps its owner's key, whoever pushes it. household_id is
- * only sent once an item has been shared or unshared, so builds talking to a
- * project without migration 004 never send it.
+ * only sent once an item has been shared or unshared, and looked_after_by
+ * once someone has been chosen (or the item came from a project with
+ * migration 005), so builds talking to a project without those migrations
+ * never send them. A personal item always sends null: the server refuses a
+ * person on an item with no household.
  */
-function itemToRow(item: SinceItem, userId: string): ItemRow {
+export function itemToRow(item: SinceItem, userId: string): ItemRow {
   return {
     id: item.id,
     user_id: item.ownerId ?? userId,
     ...(item.householdId !== undefined ? { household_id: item.householdId } : {}),
+    ...(item.lookedAfterBy !== undefined ? { looked_after_by: lookedAfterBy(item) } : {}),
     name: item.name,
     category: item.category,
     last_done_date: item.lastDoneDate,

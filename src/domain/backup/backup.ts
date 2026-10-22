@@ -10,7 +10,9 @@
  * Restoring merges and never replaces:
  *   - An item already on the phone (same id) keeps its fields; any history
  *     entries it lacks are added.
- *   - An item not on the phone is added under a new id. The cloud tombstones
+ *   - An item not on the phone is added under a new id, as this account's own
+ *     and Just me: no owner, household or person looking after it, as those
+ *     may not be this account's (households). The cloud tombstones
  *     deleted ids, so an item restored with its old id would vanish at the
  *     next sync if it was deleted there (CLAUDE.md, data safety).
  *   - Entries already on the phone are left as they are.
@@ -102,9 +104,9 @@ export function planRestore(
       mine.get(incoming.id) ??
       incoming.history.map((e) => byEntry.get(e.id)).find((i): i is SinceItem => i !== undefined);
     if (!existing) {
-      // Added as this account's own and just for me: the backup's owner and
-      // household may not be this account's (households)
-      const { ownerId: _owner, householdId: _household, ...own } = incoming;
+      // Added as this account's own and just for me: the backup's owner,
+      // household and who looked after it may not be this account's
+      const { ownerId: _owner, householdId: _household, lookedAfterBy: _who, ...own } = incoming;
       added.push({ ...own, id: newId(), updatedAt: now });
       continue;
     }
