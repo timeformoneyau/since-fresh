@@ -17,6 +17,8 @@ import { getSuggestion } from '../utils/suggestions';
 import { intervalText } from '../domain/items/display';
 import { palette, colours, fonts, type, radius, space, cardShadow, TAP } from '../theme/tokens';
 import DatePickerModal from './DatePickerModal';
+import LookAfterChoices from './LookAfterChoices';
+import { LOOK_AFTER_COPY, type LookAfterChoice } from '../domain/household/rules';
 
 const REPEAT_UNITS: RepeatUnit[] = ['days', 'weeks', 'months', 'years'];
 const MIN_REPEAT = 1;
@@ -30,6 +32,8 @@ export interface ItemFormValues {
   repeatUnit: RepeatUnit | null;
   /** Shared with the household (only offered when there is one). */
   shared?: boolean;
+  /** Who looks after it (shared items only); null is Anyone. */
+  lookedAfterBy?: string | null;
 }
 
 interface Props {
@@ -48,6 +52,8 @@ interface Props {
   footer?: React.ReactNode;
   /** Offer "Who is this for?" (households): the household's name. */
   householdName?: string;
+  /** Offer "Who looks after this?" while the item is shared: the choices, and who "You" is. */
+  lookAfter?: { choices: LookAfterChoice[]; me: string | null };
 }
 
 function yesterdayString(): string {
@@ -68,6 +74,7 @@ export default function ItemForm({
   onSubmit,
   footer,
   householdName,
+  lookAfter,
 }: Props) {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -78,6 +85,7 @@ export default function ItemForm({
   const [lastDoneDate, setLastDoneDate] = useState(initial.lastDoneDate);
   const [repeats, setRepeats] = useState(initial.repeatValue !== null);
   const [shared, setShared] = useState(initial.shared ?? false);
+  const [lookedAfterBy, setLookedAfterBy] = useState<string | null>(initial.lookedAfterBy ?? null);
   const [repeatValue, setRepeatValue] = useState(initial.repeatValue ?? 30);
   const [repeatUnit, setRepeatUnit] = useState<RepeatUnit>(initial.repeatUnit ?? 'days');
   const [intervalTouched, setIntervalTouched] = useState(false);
@@ -100,6 +108,9 @@ export default function ItemForm({
   }, [suggestion?.repeatValue, suggestion?.repeatUnit, intervalTouched]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canSave = name.trim().length > 0;
+  // Only someone who can change sharing sees "Who is this for?"; for anyone
+  // else the item stays as it is
+  const showLookAfter = !!lookAfter && (householdName !== undefined ? shared : !!initial.shared);
   const nextDue = formatDisplay(getNextDueDate(lastDoneDate, repeatValue, repeatUnit));
   const categories: string[] = (DEFAULT_CATEGORIES as readonly string[]).includes(category)
     ? [...DEFAULT_CATEGORIES]
@@ -123,6 +134,7 @@ export default function ItemForm({
       repeatValue: repeats ? repeatValue : null,
       repeatUnit: repeats ? repeatUnit : null,
       ...(householdName !== undefined ? { shared } : {}),
+      ...(showLookAfter ? { lookedAfterBy } : {}),
     });
   }
 
@@ -179,6 +191,20 @@ export default function ItemForm({
                 caption={`Shared with ${householdName}`}
               />
             </View>
+          </View>
+        )}
+
+        {/* Who looks after this? (shared items) */}
+        {showLookAfter && (
+          <View style={styles.card}>
+            <Text style={styles.heading}>{LOOK_AFTER_COPY.question}</Text>
+            <LookAfterChoices
+              prefix={prefix}
+              choices={lookAfter!.choices}
+              me={lookAfter!.me}
+              value={lookedAfterBy}
+              onChange={setLookedAfterBy}
+            />
           </View>
         )}
 

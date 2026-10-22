@@ -13,7 +13,7 @@ import { loadHouseholdState, saveHouseholdState, onHouseholdChanged } from './st
 import { HouseholdState, muteKey, isShared } from './rules';
 import type { SinceItem } from '../../types';
 
-export type { Household, Member, HouseholdState, ListFilter } from './rules';
+export type { Household, Member, HouseholdState, ListFilter, LookAfterChoice } from './rules';
 export {
   isShared,
   isMine,
@@ -23,6 +23,11 @@ export {
   canDelete,
   filterItems,
   doneBy,
+  canChooseWhoLooksAfter,
+  lookAfterChoices,
+  lookedAfterBy,
+  lookedAfterName,
+  LOOK_AFTER_COPY,
 } from './rules';
 export { onHouseholdChanged };
 

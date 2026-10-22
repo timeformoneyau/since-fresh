@@ -1,0 +1,27 @@
+appId: com.since.app
+name: Who looks after this - not offered without a household (local-only build)
+# "By person" and "Who looks after this?" exist only in a household, which
+# needs an account. CI runs a local-only build, so this checks neither leaks
+# into it; the household journeys are covered by
+# src/screens/__tests__/lookAfter.ui.test.tsx.
+---
+- runFlow: subflows/launch.yaml
+- runFlow:
+    file: subflows/add-first-item.yaml
+    env:
+      NAME: "Passport"
+- assertVisible:
+    id: "main-view-urgent"
+- assertVisible:
+    id: "main-view-category"
+- assertNotVisible:
+    id: "main-view-person"
+- tapOn:
+    id: "item-Passport-history"
+- extendedWaitUntil:
+    visible:
+      id: "detail-add-past-entry"
+    timeout: 10000
+- assertNotVisible:
+    id: "detail-look-after"
+- takeScreenshot: 15-look-after-local-only

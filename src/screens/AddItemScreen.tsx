@@ -7,12 +7,14 @@ import { todayString } from '../utils/dateUtils';
 import ItemForm from '../components/ItemForm';
 import { useHousehold } from '../components/useHousehold';
 import { getSuggestion } from '../utils/suggestions';
+import { lookAfterChoices } from '../domain/household/service';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Add'>;
 
 export default function AddItemScreen() {
   const navigation = useNavigation<Nav>();
-  const { household } = useHousehold();
+  const state = useHousehold();
+  const { household } = state;
   // From a starter: its name, category and usual gap, all still editable
   const starter = useRoute<RouteProp<RootStackParamList, 'Add'>>().params;
   const usual = starter ? getSuggestion(starter.name) : null;
@@ -33,8 +35,10 @@ export default function AddItemScreen() {
       suggestFromName
       autoFocusName={!starter}
       householdName={household?.name}
-      onSubmit={async ({ shared, ...values }) => {
-        await createItem({ ...values, householdId: shared && household ? household.id : null });
+      lookAfter={household ? { choices: lookAfterChoices(state), me: state.userId } : undefined}
+      onSubmit={async ({ shared, lookedAfterBy, ...values }) => {
+        const householdId = shared && household ? household.id : null;
+        await createItem({ ...values, householdId, lookedAfterBy: householdId ? lookedAfterBy ?? null : null });
         navigation.goBack();
       }}
     />
