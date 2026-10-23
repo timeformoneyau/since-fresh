@@ -27,6 +27,7 @@
 import type { SinceItem, CompletionEvent } from '../../types';
 import { sortNewestFirst } from '../items/history.ts';
 import type { SyncFailure } from './classify';
+import { itemProblem, noteProblem, refusalCode } from './limits.ts';
 
 export type SyncOutcome = 'synced' | 'skipped' | SyncFailure;
 
@@ -43,6 +44,14 @@ export interface QueueSnapshot {
   deleteMeta?: Record<string, { ownerId?: string; householdId?: string | null }>;
   entryUpserts?: EntryRef[];
   entryDeletes?: EntryRef[];
+  /** Changes the server refused for good, by item id (queueOps.ts). */
+  parked?: Record<string, Parked>;
+}
+
+/** A parked change: the refusal's SN code and the item's updatedAt when it was parked. */
+export interface Parked {
+  code: string;
+  updatedAt: string;
 }
 
 /** A history entry as stored in the cloud (completion_events). */
@@ -112,6 +121,8 @@ export interface SyncPorts {
   loadCursor(): Promise<SyncCursor | null>;
   saveCursor(cursor: SyncCursor): Promise<void>;
   afterMerge(items: SinceItem[]): Promise<void>;
+  /** Store what this run parked, replacing what was stored. Optional: tests may leave it out. */
+  parkChanges?(parked: Record<string, Parked>): Promise<void>;
   /** Pure: what a thrown error means (classify.ts). */
   classifyError(error: unknown): SyncFailure;
 }
@@ -282,6 +293,114 @@ const later = (a: string | null, b: string | undefined | null): string | null =>
   return serverTimeMs(b) > serverTimeMs(a) ? b : a;
 };
 
+/** The queue without any change to these items (they're parked). */
+function withoutItemIds(q: QueueSnapshot, gone: Set<string>): QueueSnapshot {
+  if (gone.size === 0) return q;
+  return {
+    ...q,
+    upserts: q.upserts.filter((id) => !gone.has(id)),
+    entryUpserts: (q.entryUpserts ?? []).filter((r) => !gone.has(r.itemId)),
+    entryDeletes: (q.entryDeletes ?? []).filter((r) => !gone.has(r.itemId)),
+  };
+}
+
+/**
+ * What can't go this time, before anything is sent: changes parked earlier
+ * that still apply (the item hasn't changed since), and changes the server
+ * would refuse for a size limit (limits.ts). Only what's being sent is
+ * checked: an item push sends the row and all its entries, an entry change
+ * just that entry.
+ */
+export function parkBeforePush(queue: QueueSnapshot, items: SinceItem[]): Record<string, Parked> {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const parked: Record<string, Parked> = {};
+  const park = (item: SinceItem, code: string) => {
+    if (!parked[item.id]) parked[item.id] = { code, updatedAt: item.updatedAt };
+  };
+
+  const touched = new Set([
+    ...queue.upserts,
+    ...(queue.entryUpserts ?? []).map((r) => r.itemId),
+    ...(queue.entryDeletes ?? []).map((r) => r.itemId),
+  ]);
+  for (const id of touched) {
+    const item = byId.get(id);
+    const earlier = queue.parked?.[id];
+    if (item && earlier && earlier.updatedAt === item.updatedAt) park(item, earlier.code);
+  }
+  for (const id of queue.upserts) {
+    const item = byId.get(id);
+    const code = item && itemProblem(item);
+    if (item && code) park(item, code);
+  }
+  for (const ref of queue.entryUpserts ?? []) {
+    const item = byId.get(ref.itemId);
+    const code = item && noteProblem(item.history.find((e) => e.id === ref.entryId)?.note);
+    if (item && code) park(item, code);
+  }
+  return parked;
+}
+
+/**
+ * Send `rows` (grouped by item); if the server refuses them for a size
+ * limit, send each item's rows on its own so one refused item can't hold up
+ * the rest, and park the ones refused. Any other error is thrown as before.
+ */
+async function sendIsolating<T>(
+  rows: T[],
+  itemOf: (row: T) => string,
+  send: (rows: T[]) => Promise<void>,
+  refused: (itemId: string, code: string) => void,
+): Promise<void> {
+  if (rows.length === 0) return;
+  try {
+    await send(rows);
+    return;
+  } catch (error) {
+    const code = refusalCode(error);
+    if (!code) throw error;
+    const ids = [...new Set(rows.map(itemOf))];
+    if (ids.length === 1) {
+      refused(ids[0], code);
+      return;
+    }
+  }
+  const groups = new Map<string, T[]>();
+  for (const row of rows) groups.set(itemOf(row), [...(groups.get(itemOf(row)) ?? []), row]);
+  for (const [itemId, group] of groups) {
+    try {
+      await send(group);
+    } catch (error) {
+      const code = refusalCode(error);
+      if (!code) throw error;
+      refused(itemId, code);
+    }
+  }
+}
+
+/** One entry push split by item, for sendIsolating. */
+type EntryOp =
+  | { kind: 'insertOnly'; row: EntryRow }
+  | { kind: 'overwrite'; row: EntryRow }
+  | { kind: 'softDelete'; ref: EntryRef & { ownerId?: string } };
+
+const entryOps = (push: EntryPush): EntryOp[] => [
+  ...push.insertOnly.map((row) => ({ kind: 'insertOnly' as const, row })),
+  ...push.overwrite.map((row) => ({ kind: 'overwrite' as const, row })),
+  ...push.softDelete.map((ref) => ({ kind: 'softDelete' as const, ref })),
+];
+
+const entryOpItem = (op: EntryOp) => (op.kind === 'softDelete' ? op.ref.itemId : op.row.itemId);
+
+function toEntryPush(ops: EntryOp[]): EntryPush {
+  const push: EntryPush = { insertOnly: [], overwrite: [], softDelete: [] };
+  for (const op of ops) {
+    if (op.kind === 'softDelete') push.softDelete.push(op.ref);
+    else push[op.kind].push(op.row);
+  }
+  return push;
+}
+
 /**
  * Push pending local changes, pull remote changes, merge, persist.
  *
@@ -313,35 +432,51 @@ export async function runSync(ports: SyncPorts): Promise<SyncOutcome> {
     if (!(await ports.isOwnedBySignedInUser())) return 'skipped';
 
     // ─── 1. Snapshot what we are about to push ──────────────────────────
-    const pushing = await ports.loadQueue();
+    const queued = await ports.loadQueue();
     const itemsAtPush = await ports.loadItems();
     const cursor = await ports.loadCursor();
 
-    // ─── 2. Network ─────────────────────────────────────────────────────
-    if (pushing.upserts.length > 0) {
-      const byId = new Map(itemsAtPush.map((i) => [i.id, i]));
-      const toPush = pushing.upserts
-        .map((id) => byId.get(id))
-        .filter((i): i is SinceItem => i !== undefined);
-      await ports.cloudUpsertMany(toPush);
-    }
+    // Changes the server would refuse, or already has, for good: skipped,
+    // kept in the queue and on the phone, and shown on the item.
+    const parked = parkBeforePush(queued, itemsAtPush);
+    const byId = new Map(itemsAtPush.map((i) => [i.id, i]));
+    const refused = (itemId: string, code: string) => {
+      const item = byId.get(itemId);
+      if (item && !parked[itemId]) parked[itemId] = { code, updatedAt: item.updatedAt };
+    };
+    const notParked = (id: string) => !parked[id];
 
-    const entryPush = entryPushFor(pushing, itemsAtPush);
-    if (entryPush.insertOnly.length + entryPush.overwrite.length + entryPush.softDelete.length > 0) {
+    // ─── 2. Network ─────────────────────────────────────────────────────
+    const toPush = queued.upserts
+      .filter(notParked)
+      .map((id) => byId.get(id))
+      .filter((i): i is SinceItem => i !== undefined);
+    await sendIsolating(toPush, (i) => i.id, (batch) => ports.cloudUpsertMany(batch), refused);
+
+    const sendEntries = async (push: EntryPush) => {
       try {
-        await ports.cloudPushEntries(entryPush);
+        await ports.cloudPushEntries(push);
       } catch (error) {
         // An entry whose item isn't in the cloud (e.g. the queue was lost
         // before the item was pushed): send those items, then try once more.
         if ((error as { code?: unknown })?.code !== FOREIGN_KEY_VIOLATION) throw error;
-        const needed = new Set(entryPush.overwrite.map((e) => e.itemId));
+        const needed = new Set(push.overwrite.map((e) => e.itemId));
         await ports.cloudUpsertMany(itemsAtPush.filter((i) => needed.has(i.id)));
-        await ports.cloudPushEntries(entryPush);
+        await ports.cloudPushEntries(push);
       }
-    }
+    };
+    const pushEntries = (push: EntryPush) =>
+      sendIsolating(
+        entryOps(push).filter((op) => notParked(entryOpItem(op))),
+        entryOpItem,
+        (ops) => sendEntries(toEntryPush(ops)),
+        refused,
+      );
 
-    if (pushing.deletes.length > 0) {
-      await ports.cloudDeleteMany(pushing.deletes, pushing.deleteMeta);
+    await pushEntries(entryPushFor(withoutItemIds(queued, new Set(Object.keys(parked))), itemsAtPush));
+
+    if (queued.deletes.length > 0) {
+      await ports.cloudDeleteMany(queued.deletes, queued.deleteMeta);
     }
 
     const [cloudItems, tombstones] = await Promise.all([
@@ -359,19 +494,23 @@ export async function runSync(ports: SyncPorts): Promise<SyncOutcome> {
       }
     } else {
       // First sync for this account: copy entries the cloud may not have.
+      // An entry over a limit is left out (the cloud can't take it); the
+      // item itself is already there.
       const inCloud = new Set(cloudItems.map((i) => i.id));
-      const alreadySent = new Set(pushing.upserts);
+      const alreadySent = new Set(queued.upserts);
       const backfill = itemsAtPush
         .filter((i) => inCloud.has(i.id) && !alreadySent.has(i.id))
-        .flatMap((i) => i.history.map((e) => toRow(i, e)));
-      if (backfill.length > 0) {
-        await ports.cloudPushEntries({ insertOnly: backfill, overwrite: [], softDelete: [] });
-      }
+        .flatMap((i) => i.history.filter((e) => !noteProblem(e.note)).map((e) => toRow(i, e)));
+      await pushEntries({ insertOnly: backfill, overwrite: [], softDelete: [] });
     }
+
+    // What actually went: everything queued except what's parked
+    const pushing = withoutItemIds(queued, new Set(Object.keys(parked)));
 
     // ─── 3. Retire only what was pushed ─────────────────────────────────
     // Anything enqueued while the network calls were in flight stays queued.
     await ports.removeFromQueue(pushing);
+    await ports.parkChanges?.(parked);
 
     // ─── 4. Commit, against current state ───────────────────────────────
     // Read as late as possible. Everything from here is local and fast; no

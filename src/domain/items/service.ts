@@ -20,7 +20,7 @@ import { todayString } from '../../utils/dateUtils';
 import { rescheduleAllNotifications } from '../../notifications/scheduler';
 import { saveReminderTime } from '../../notifications/reminderTimeStore';
 import type { ReminderTime } from '../../notifications/reminderTime';
-import { enqueueUpsert, enqueueDelete, enqueueEntryUpsert, enqueueEntryDelete } from '../sync/queue';
+import { enqueueUpsert, enqueueDelete, enqueueEntryUpsert, enqueueEntryDelete, parkedMessages } from '../sync/queue';
 import { syncInBackground } from '../sync/engine';
 import { withoutCompletion, copyForRestore } from './undo';
 import {
@@ -90,6 +90,21 @@ async function loadOne(itemId: string): Promise<{ items: SinceItem[]; existing: 
   const existing = items.find((i) => i.id === itemId);
   if (!existing) throw new Error(`Item not found: ${itemId}`);
   return { items, existing };
+}
+
+/**
+ * Why this item's change can't sync yet (a size limit the server refused,
+ * sync/limits.ts), in plain words, or null. Editing the item tries again.
+ */
+export async function getSyncProblem(itemId: string): Promise<string | null> {
+  const item = (await loadItems()).find((i) => i.id === itemId);
+  if (!item) return null;
+  return (await parkedMessages([item]))[item.id] ?? null;
+}
+
+/** How many items have a change that can't sync yet. */
+export async function countSyncProblems(): Promise<number> {
+  return Object.keys(await parkedMessages(await loadItems())).length;
 }
 
 /** Derived fields plus this phone's snooze, if any. */

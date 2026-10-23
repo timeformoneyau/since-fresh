@@ -16,9 +16,9 @@ import { takeSignInNotice } from '../domain/auth/sessionNotice';
 import { syncNow, SyncOutcome } from '../domain/sync/engine';
 import { hasPending } from '../domain/sync/queue';
 import { loadLastSyncedAt } from '../domain/sync/lastSynced';
-import { describeLastBackup, describeSyncOutcome } from '../domain/sync/backupStatus';
+import { describeLastBackup, describeSyncOutcome, describeParked } from '../domain/sync/backupStatus';
 import { friendlyAuthError } from '../domain/auth/errors';
-import { exportBackup, previewRestore, applyRestore, BackupError } from '../domain/items/service';
+import { exportBackup, previewRestore, applyRestore, BackupError, countSyncProblems } from '../domain/items/service';
 import { BACKUP_COPY } from '../domain/backup/backup';
 import { shareBackupFile, pickBackupFile } from '../domain/backup/files';
 import { isCloudSyncConfigured } from '../lib/supabase';
@@ -123,6 +123,7 @@ export default function AccountScreen() {
   const [preparingSignOut, setPreparingSignOut] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [parked, setParked] = useState(0);
 
   const load = useCallback(() => {
     if (!isCloudSyncConfigured()) {
@@ -136,6 +137,7 @@ export default function AccountScreen() {
       })
       .catch(() => setUser(null));
     hasPending().then(setPending).catch(() => {});
+    countSyncProblems().then(setParked).catch(() => {});
     loadLastSyncedAt().then(setLastSyncedAt).catch(() => {});
   }, []);
 
@@ -153,8 +155,10 @@ export default function AccountScreen() {
       return;
     }
     setPending(await hasPending().catch(() => false));
+    const stuck = await countSyncProblems().catch(() => 0);
+    setParked(stuck);
     setLastSyncedAt(await loadLastSyncedAt().catch(() => null));
-    setSyncNote(describeSyncOutcome(outcome));
+    setSyncNote(describeSyncOutcome(outcome, stuck));
   }
 
   async function handleSignOut() {
@@ -277,6 +281,9 @@ export default function AccountScreen() {
           {describeLastBackup(lastSyncedAt, new Date())}
           {pending ? '. Some changes are waiting to back up.' : '.'}
         </Text>
+        {parked > 0 && syncNote === '' && (
+          <Text style={styles.note} testID="account-parked">{describeParked(parked)}</Text>
+        )}
         <TouchableOpacity
           style={styles.rowButton}
           onPress={handleSyncNow}

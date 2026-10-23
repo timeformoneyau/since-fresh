@@ -33,25 +33,16 @@ export { onHouseholdChanged };
 
 export const getHouseholdState = loadHouseholdState;
 
-/** Household and invite errors the database raises, in plain words. */
-export function householdErrorMessage(error: unknown): string {
-  const e = (error ?? {}) as { code?: unknown; message?: unknown };
-  // Our own functions raise their message for these (004_households.sql)
-  if ((e.code === 'P0001' || e.code === 'P0002' || e.code === '42501') && typeof e.message === 'string') {
-    return e.message;
-  }
-  if (e.code === 'PGRST202' || e.code === '42883') {
-    return "Households aren't set up on the server yet.";
-  }
-  return "Couldn't reach the server. Check your connection and try again.";
-}
+export { HOUSEHOLD_COPY, householdErrorMessage, joinResultError } from './errors';
+import { joinResultError } from './errors';
 
 export async function createHousehold(name: string, myName: string): Promise<void> {
   await cloud.createHousehold(name.trim(), myName.trim());
 }
 
 export async function joinHousehold(code: string, myName: string): Promise<void> {
-  await cloud.joinHousehold(code.trim(), myName.trim());
+  const refused = joinResultError(await cloud.joinHousehold(code.trim(), myName.trim()));
+  if (refused) throw refused;
 }
 
 /** A new invite code, shown as XXXX-XXXX. */

@@ -41,8 +41,9 @@ export async function fetchHousehold(): Promise<{ household: Household | null; m
 export const createHousehold = (name: string, myName: string) =>
   rpc<string>('create_household', { household_name: name, my_name: myName });
 export const createInvite = () => rpc<string>('create_invite');
+/** The household id (as text or JSON); see service.ts for an error body returned as data. */
 export const joinHousehold = (code: string, myName: string) =>
-  rpc<string>('join_household', { invite_code: code, my_name: myName });
+  rpc<unknown>('join_household', { invite_code: code, my_name: myName });
 export const leaveHousehold = () => rpc<void>('leave_household');
 export const removeMember = (userId: string) => rpc<void>('remove_member', { member: userId });
 export const transferOwnership = (userId: string) => rpc<void>('transfer_ownership', { new_owner: userId });

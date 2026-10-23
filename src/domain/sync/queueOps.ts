@@ -9,6 +9,14 @@
  *
  * The entry lists were added after the queue first shipped: a stored queue
  * without them reads as empty lists, and older builds ignore them.
+ *
+ * `parked` (Play hardening B) holds changes the server refused for good (a
+ * size limit, limits.ts). A parked item keeps its place in the lists above,
+ * so nothing is lost and older builds still see it as waiting; sync just
+ * skips it. Each entry records the item's updatedAt when it was parked: any
+ * edit changes that, which un-parks it and lets the next sync try again.
+ * Older builds drop the field when they next save the queue; the next sync
+ * by a newer build parks the change again.
  */
 
 export interface EntryRef {
@@ -22,6 +30,12 @@ export interface DeleteMeta {
   householdId?: string | null;
 }
 
+/** A change the server refused permanently: its SN code and the item's updatedAt at the time. */
+export interface ParkedChange {
+  code: string;
+  updatedAt: string;
+}
+
 export interface SyncQueue {
   /** Item ids created or modified locally and not yet pushed. */
   upserts: string[];
@@ -33,6 +47,8 @@ export interface SyncQueue {
   entryUpserts: EntryRef[];
   /** History entries deleted locally and not yet pushed. */
   entryDeletes: EntryRef[];
+  /** Items whose change can't sync yet, by item id (see above). */
+  parked?: Record<string, ParkedChange>;
 }
 
 export const EMPTY_QUEUE: SyncQueue = { upserts: [], deletes: [], entryUpserts: [], entryDeletes: [] };
@@ -42,6 +58,21 @@ const isRef = (x: unknown): x is EntryRef =>
   typeof x === 'object' && x !== null &&
   typeof (x as EntryRef).itemId === 'string' && typeof (x as EntryRef).entryId === 'string';
 const isId = (x: unknown): x is string => typeof x === 'string';
+const isParked = (x: unknown): x is ParkedChange =>
+  typeof x === 'object' && x !== null &&
+  typeof (x as ParkedChange).code === 'string' && typeof (x as ParkedChange).updatedAt === 'string';
+
+function readParked(v: unknown): Pick<SyncQueue, 'parked'> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const kept = Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([, p]) => isParked(p)));
+  return Object.keys(kept).length > 0 ? { parked: kept as Record<string, ParkedChange> } : {};
+}
+
+/** Parked entries for these ids only. */
+function keepParked(parked: SyncQueue['parked'], keep: (id: string) => boolean): Pick<SyncQueue, 'parked'> {
+  if (!parked) return {};
+  return readParked(Object.fromEntries(Object.entries(parked).filter(([id]) => keep(id))));
+}
 
 /** A stored queue, whatever build wrote it. Anything unreadable is dropped, never thrown. */
 export function readQueue(parsed: unknown): SyncQueue {
@@ -54,6 +85,7 @@ export function readQueue(parsed: unknown): SyncQueue {
     ...(meta && Object.keys(meta).length > 0 ? { deleteMeta: meta } : {}),
     entryUpserts: list(q.entryUpserts, isRef),
     entryDeletes: list(q.entryDeletes, isRef),
+    ...readParked(q.parked),
   };
 }
 
@@ -75,6 +107,9 @@ export function withDelete(q: SyncQueue, id: string, meta?: DeleteMeta): SyncQue
     // The item's entries go with it.
     entryUpserts: q.entryUpserts.filter((r) => r.itemId !== id),
     entryDeletes: q.entryDeletes.filter((r) => r.itemId !== id),
+    // Nothing of it is left to park. One fewer item may also make room for
+    // an item parked by the per-account limit, so that one tries again.
+    ...keepParked(q.parked, (p) => p !== id && q.parked?.[p]?.code !== 'SN007'),
   };
 }
 
@@ -109,6 +144,7 @@ export function withoutPushed(q: SyncQueue, pushed: Partial<SyncQueue>): SyncQue
     ...keepMeta(q.deleteMeta, deletes),
     entryUpserts: q.entryUpserts.filter(notIn(done.entryUpserts)),
     entryDeletes: q.entryDeletes.filter(notIn(done.entryDeletes)),
+    ...(q.parked ? { parked: q.parked } : {}),
   };
 }
 
@@ -131,7 +167,23 @@ export function withoutItems(q: SyncQueue, ids: string[]): SyncQueue {
     ...keepMeta(q.deleteMeta, deletes),
     entryUpserts: q.entryUpserts.filter((r) => !gone.has(r.itemId)),
     entryDeletes: q.entryDeletes.filter((r) => !gone.has(r.itemId)),
+    ...keepParked(q.parked, (id) => !gone.has(id)),
   };
+}
+
+/**
+ * Record what the last sync parked, replacing what was there: an item that
+ * went through, or was changed since, is no longer parked.
+ */
+export function withParked(q: SyncQueue, parked: Record<string, ParkedChange>): SyncQueue {
+  const { parked: _old, ...rest } = q;
+  return { ...rest, ...readParked(parked) };
+}
+
+/** The parked entry for an item, if it still applies (the item hasn't changed since). */
+export function activeParked(q: { parked?: Record<string, ParkedChange> }, item: { id: string; updatedAt: string }): ParkedChange | null {
+  const p = q.parked?.[item.id];
+  return p && p.updatedAt === item.updatedAt ? p : null;
 }
 
 export function isEmpty(q: SyncQueue): boolean {

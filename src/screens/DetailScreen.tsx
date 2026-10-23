@@ -18,6 +18,7 @@ import {
   setLookedAfterBy,
   snoozeItem,
   clearSnooze,
+  getSyncProblem,
 } from '../domain/items/service';
 import { canSnooze, snoozeNote, SNOOZE_OPTIONS, type SnoozeOption } from '../domain/snooze/rules';
 import { useHousehold } from '../components/useHousehold';
@@ -75,6 +76,7 @@ export default function DetailScreen() {
   const [changingRemind, setChangingRemind] = useState(false);
   const [changingLookAfter, setChangingLookAfter] = useState(false);
   const [choosingSnooze, setChoosingSnooze] = useState(false);
+  const [syncProblem, setSyncProblem] = useState<string | null>(null);
   const household = useHousehold();
   const showToast = useToast();
 
@@ -109,6 +111,7 @@ export default function DetailScreen() {
     const derived = await getDerivedItemById(itemId);
     if (!derived) { navigation.goBack(); return; }
     setItem(derived);
+    setSyncProblem(await getSyncProblem(itemId).catch(() => null));
   }, [itemId, navigation]);
 
   useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
@@ -230,6 +233,13 @@ export default function DetailScreen() {
             {usual !== null && <Column heading="Usually" value={`${usual} days`} sub="between each" />}
           </View>
         </View>
+
+        {syncProblem && (
+          <View style={[styles.card, styles.syncCard]} testID="detail-sync-problem">
+            <Text style={styles.syncHeading}>Can't sync yet</Text>
+            <Text style={type.secondary}>{syncProblem} It's saved on this phone.</Text>
+          </View>
+        )}
 
         <View style={styles.actions}>
           {repeating && (
@@ -473,6 +483,8 @@ const styles = StyleSheet.create({
     ...cardShadow,
   },
   statusCard: { marginHorizontal: space.screen, marginTop: -44 },
+  syncCard: { marginHorizontal: space.screen, marginTop: 12 },
+  syncHeading: { fontFamily: fonts.semibold, fontSize: 15, color: palette.ink, marginBottom: 4 },
   statusRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
   columns: { flexDirection: 'row', marginTop: 16, gap: 12 },
   column: { flex: 1 },

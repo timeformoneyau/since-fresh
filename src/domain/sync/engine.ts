@@ -25,7 +25,7 @@ import {
 } from '../items/cloudStorage';
 import { loadCursor, saveCursor, clearCursor } from './cursor';
 import { isCloudSyncConfigured, getSupabase } from '../../lib/supabase';
-import { loadQueue, removeFromQueue, enqueueUpsert, clearQueue, forgetQueuedItems } from './queue';
+import { loadQueue, removeFromQueue, enqueueUpsert, clearQueue, forgetQueuedItems, parkChanges } from './queue';
 import { fetchHousehold, fetchSharedItemKeys } from '../household/cloud';
 import { loadHouseholdState, saveHouseholdState, clearHouseholdState } from '../household/store';
 import type { Household } from '../household/rules';
@@ -105,6 +105,7 @@ const ports: SyncPorts = {
     if (userId) await saveCursor(userId, cursor);
   },
   afterMerge: rescheduleAllNotifications,
+  parkChanges,
   classifyError: classifySyncError,
 };
 
