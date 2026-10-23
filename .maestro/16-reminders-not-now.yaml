@@ -1,0 +1,65 @@
+appId: com.since.app
+name: Reminders explained once, with Not now
+---
+# Notifications not allowed, so saving the first repeating item explains
+# reminders first; Not now is a real answer and nothing asks again.
+- retry:
+    maxRetries: 2
+    commands:
+      - launchApp:
+          clearState: true
+          permissions:
+            notifications: deny
+      - extendedWaitUntil:
+          visible:
+            id: "empty-add-button"
+          timeout: 60000
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Water plants"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "reminders-not-now-button"
+    timeout: 10000
+- assertVisible: "Turn on reminders?"
+- takeScreenshot: 16-reminders-explained
+- tapOn:
+    id: "reminders-not-now-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Water plants"
+    timeout: 10000
+# The list says reminders are off, calmly, once; hiding it is for good
+- assertVisible:
+    id: "reminders-off-notice"
+- takeScreenshot: 16-reminders-off-notice
+- tapOn:
+    id: "reminders-off-dismiss"
+- assertNotVisible:
+    id: "reminders-off-notice"
+# A second repeating item asks nothing
+- tapOn:
+    id: "main-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Gutters"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Gutters"
+    timeout: 10000
+- assertNotVisible:
+    id: "reminders-not-now-button"

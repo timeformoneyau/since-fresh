@@ -91,4 +91,6 @@ export type RootStackParamList = {
   EnterCode: { email: string; purpose: 'sign_in' | 'email_change' };
   // Create a household, or join one with a code
   HouseholdSetup: { mode: 'create' | 'join' };
+  // Once, after the first repeating item is saved (notifications/permission.ts)
+  RemindersPermission: undefined;
 };

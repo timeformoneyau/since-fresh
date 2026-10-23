@@ -43,6 +43,11 @@ export function backupFileName(today: string): string {
   return `${BACKUP_FORMAT}-${today}.json`;
 }
 
+/** A file this app wrote for the share sheet (only those are cleared from the cache folder). */
+export function isBackupFileName(name: string): boolean {
+  return /^since-backup-\d{4}-\d{2}-\d{2}\.json$/.test(name);
+}
+
 export class BackupError extends Error {
   constructor(message: string) {
     super(message);

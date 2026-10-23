@@ -46,11 +46,18 @@ jest.mock('expo-file-system', () => {
     constructor(...parts) {
       this.uri = parts.map((p) => (typeof p === 'string' ? p : p.uri)).join('/');
     }
+    get name() { return this.uri.split('/').pop(); }
+    get exists() { return files.has(this.uri); }
     create() { files.set(this.uri, ''); }
     write(text) { files.set(this.uri, text); }
+    delete() { files.delete(this.uri); }
     async text() { return files.get(this.uri) ?? ''; }
   }
-  return { File, Paths: { cache: { uri: 'file:///cache' } }, __files: files };
+  const cache = {
+    uri: 'file:///cache',
+    list: () => [...files.keys()].filter((u) => u.startsWith('file:///cache/')).map((u) => new File(u)),
+  };
+  return { File, Paths: { cache }, __files: files };
 });
 jest.mock('expo-sharing', () => ({ shareAsync: jest.fn(async () => {}) }));
 jest.mock('expo-document-picker', () => ({

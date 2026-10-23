@@ -44,6 +44,24 @@ export const createInvite = () => rpc<string>('create_invite');
 /** The household id (as text or JSON); see service.ts for an error body returned as data. */
 export const joinHousehold = (code: string, myName: string) =>
   rpc<unknown>('join_household', { invite_code: code, my_name: myName });
+export const revokeInvite = (code: string) => rpc<void>('revoke_invite', { invite_code: code });
+
+/**
+ * The household's codes still waiting to be used, newest first. Only the
+ * owner can read them (household_invites_select, 004_households.sql).
+ */
+export async function fetchActiveInvites(householdId: string): Promise<Array<{ code: string; expiresAt: string }>> {
+  const { data, error } = await requireSupabase()
+    .from('household_invites')
+    .select('code, expires_at')
+    .eq('household_id', householdId)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return ((data ?? []) as Array<{ code: string; expires_at: string }>).map((r) => ({ code: r.code, expiresAt: r.expires_at }));
+}
+
 export const leaveHousehold = () => rpc<void>('leave_household');
 export const removeMember = (userId: string) => rpc<void>('remove_member', { member: userId });
 export const transferOwnership = (userId: string) => rpc<void>('transfer_ownership', { new_owner: userId });

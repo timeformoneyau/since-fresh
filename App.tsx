@@ -15,7 +15,9 @@ import { InstrumentSans_700Bold } from '@expo-google-fonts/instrument-sans/700Bo
 import { getSupabase, isCloudSyncConfigured } from './src/lib/supabase';
 import { RootStackParamList } from './src/types';
 import { ToastProvider } from './src/components/Toast';
-import { requestNotificationPermissions, rescheduleAllNotifications } from './src/notifications/scheduler';
+import { setUpReminderChannel, rescheduleAllNotifications } from './src/notifications/scheduler';
+import { clearStaleBackupFiles } from './src/domain/backup/files';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import { loadItems } from './src/domain/items/storage';
 import { reconcileDeviceOwnership, syncInBackground } from './src/domain/sync/engine';
 
@@ -30,6 +32,7 @@ import ChangeEmailScreen from './src/screens/ChangeEmailScreen';
 import SignInScreen from './src/screens/auth/SignInScreen';
 import HouseholdSetupScreen from './src/screens/HouseholdSetupScreen';
 import EnterCodeScreen from './src/screens/auth/EnterCodeScreen';
+import RemindersPermissionScreen from './src/screens/RemindersPermissionScreen';
 import { colours, fonts } from './src/theme/tokens';
 
 Notifications.setNotificationHandler({
@@ -100,6 +103,11 @@ function AppNavigator() {
         options={{ title: 'Change email' }}
       />
       <AppStack.Screen
+        name="RemindersPermission"
+        component={RemindersPermissionScreen}
+        options={{ title: 'Reminders' }}
+      />
+      <AppStack.Screen
         name="EnterCode"
         component={EnterCodeScreen}
         options={({ route }) => ({
@@ -110,7 +118,16 @@ function AppNavigator() {
   );
 }
 
+/** A fatal error anywhere below shows a calm recovery screen (ErrorBoundary.tsx). */
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <SinceApp />
+    </ErrorBoundary>
+  );
+}
+
+function SinceApp() {
   const [fontsLoaded, fontError] = useFonts({
     InstrumentSerif_400Regular,
     InstrumentSans_400Regular,
@@ -142,8 +159,11 @@ export default function App() {
       }
 
       // Notifications are local and account-independent, so a local-only
-      // install still gets reminders.
-      await requestNotificationPermissions();
+      // install still gets reminders. Permission isn't asked here: once,
+      // when the first repeating item is saved (notifications/permission.ts).
+      await setUpReminderChannel().catch(() => {});
+      // A backup file from a share the app closed during
+      clearStaleBackupFiles();
       const items = await loadItems();
       await rescheduleAllNotifications(items);
       syncInBackground();

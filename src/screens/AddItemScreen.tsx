@@ -8,6 +8,7 @@ import ItemForm from '../components/ItemForm';
 import { useHousehold } from '../components/useHousehold';
 import { getSuggestion } from '../utils/suggestions';
 import { lookAfterChoices } from '../domain/household/service';
+import { needsReminderExplanation } from '../notifications/permissionFlow';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Add'>;
 
@@ -39,6 +40,11 @@ export default function AddItemScreen() {
       onSubmit={async ({ shared, lookedAfterBy, ...values }) => {
         const householdId = shared && household ? household.id : null;
         await createItem({ ...values, householdId, lookedAfterBy: householdId ? lookedAfterBy ?? null : null });
+        // The first repeating item is when reminders start to matter
+        if (await needsReminderExplanation(values.repeatValue !== null).catch(() => false)) {
+          navigation.replace('RemindersPermission');
+          return;
+        }
         navigation.goBack();
       }}
     />

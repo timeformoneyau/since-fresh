@@ -12,6 +12,7 @@ import {
   planRestore,
   describeRestore,
   backupFileName,
+  isBackupFileName,
   BackupError,
   BACKUP_COPY,
 } from './backup.ts';
@@ -79,6 +80,13 @@ describe('reading and writing a backup', () => {
 
   test('the file is named for the day', () => {
     assert.equal(backupFileName('2026-10-20'), 'since-backup-2026-10-20.json');
+  });
+
+  test("only files named like ours are cleared from the cache folder", () => {
+    assert.ok(isBackupFileName(backupFileName('2026-10-20')));
+    assert.ok(!isBackupFileName('since-backup-2026-10-20.json.part'));
+    assert.ok(!isBackupFileName('my-since-backup-2026-10-20.json'));
+    assert.ok(!isBackupFileName('picked-file.json'));
   });
 });
 

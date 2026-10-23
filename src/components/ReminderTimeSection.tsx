@@ -11,16 +11,20 @@ import {
   type ReminderTime,
 } from '../notifications/reminderTime';
 import { useToast } from './Toast';
+import { REMINDERS_COPY } from '../notifications/permission';
+import { recheckReminderPermission, openReminderSettings } from '../notifications/permissionFlow';
 import { colours, fonts, palette, radius, TAP } from '../theme/tokens';
 
 /** Account / Settings: the one time of day reminders go out. */
 export default function ReminderTimeSection() {
   const showToast = useToast();
   const [time, setTime] = useState<ReminderTime | null>(null);
+  const [off, setOff] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       loadReminderTime().then(setTime).catch(() => {});
+      recheckReminderPermission().then((on) => setOff(!on)).catch(() => {});
     }, []),
   );
 
@@ -40,6 +44,19 @@ export default function ReminderTimeSection() {
   return (
     <View style={styles.section}>
       <Text style={styles.label}>Reminders</Text>
+      {off && (
+        <View testID="settings-reminders-off">
+          <Text style={styles.body}>{REMINDERS_COPY.settingsOff}</Text>
+          <TouchableOpacity
+            style={styles.settingsLink}
+            testID="settings-reminders-open"
+            onPress={() => void openReminderSettings()}
+            accessibilityRole="button"
+          >
+            <Text style={styles.settingsLinkText}>{REMINDERS_COPY.openSettings}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <Text style={styles.body}>What time of day should reminders come?</Text>
       <View style={styles.row}>
         {REMINDER_TIME_OPTIONS.map((o) => {
@@ -74,6 +91,8 @@ const styles = StyleSheet.create({
   },
   body: { fontFamily: fonts.regular, fontSize: 14, color: colours.textSecondary, marginBottom: 10, lineHeight: 20 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  settingsLink: { minHeight: TAP, justifyContent: 'center', alignSelf: 'flex-start', marginTop: -6, marginBottom: 6 },
+  settingsLinkText: { fontFamily: fonts.semibold, fontSize: 14, color: colours.textPrimary },
   chip: {
     minHeight: TAP,
     minWidth: 72,

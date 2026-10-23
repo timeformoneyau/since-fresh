@@ -11,6 +11,7 @@ import { mergeItems, type CloudEntry } from '../sync/runSync.ts';
 import { parseSnoozes, serializeSnoozes, makeSnooze } from '../snooze/rules.ts';
 import { parseReminderTime, serializeReminderTime } from '../../notifications/reminderTime.ts';
 import { parseListView, serializeListView } from '../listView/rules.ts';
+import { readPrefs } from '../../notifications/permission.ts';
 
 const base = {
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -432,5 +433,36 @@ describe('list view, kept beside the list on this phone', () => {
       repeatValue: null, repeatUnit: null,
     }));
     assert.deepEqual(parseAndMigrate(toEnvelope(items)), items);
+  });
+});
+
+describe('Play hardening B: nothing saved before changes shape', () => {
+  test('an item with every field the current release writes loads unchanged', () => {
+    const item = {
+      ...base,
+      id: 'gutters',
+      name: 'Gutters',
+      category: 'Household',
+      lastDoneDate: '2026-09-01',
+      history: [
+        { id: 'e2', date: '2026-09-01', note: 'Both sides', createdAt: '2026-09-01T08:00:00.000Z', createdBy: 'sam' },
+        { id: 'e1', date: '2026-03-01' },
+      ],
+      repeatValue: 6,
+      repeatUnit: 'months' as const,
+      ownerId: 'sam',
+      householdId: 'home',
+      lookedAfterBy: 'sam',
+    };
+    assert.deepEqual(parseAndMigrate(toEnvelope([item])), [item]);
+  });
+
+  test("the reminders prompt answers (@since_reminder_prompt_v1): new, optional, and absent reads as not asked", () => {
+    assert.deepEqual(readPrefs(JSON.parse(JSON.stringify({ explained: true }))), { explained: true });
+    assert.deepEqual(readPrefs(JSON.parse(JSON.stringify({ explained: true, noticeDismissed: true }))), {
+      explained: true,
+      noticeDismissed: true,
+    });
+    assert.deepEqual(readPrefs(null), {});
   });
 });
