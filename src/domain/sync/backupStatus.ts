@@ -14,7 +14,17 @@ export const SYNC_COPY = {
   notYet: 'Not backed up yet',
 } as const;
 
-export function describeSyncOutcome(outcome: SyncOutcome): string {
+/** "1 item can't sync yet…", for items parked by a size limit (limits.ts). */
+export function describeParked(count: number): string {
+  if (count <= 0) return '';
+  return count === 1
+    ? "1 item can't sync yet. Open it to see what to change."
+    : `${count} items can't sync yet. Open them to see what to change.`;
+}
+
+/** The note after Sync now. Parked items aren't backed up, so "everything" would be wrong. */
+export function describeSyncOutcome(outcome: SyncOutcome, parked = 0): string {
+  if (outcome === 'synced' && parked > 0) return `Everything else is backed up. ${describeParked(parked)}`;
   switch (outcome) {
     case 'synced': return SYNC_COPY.synced;
     case 'offline': return SYNC_COPY.offline;

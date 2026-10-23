@@ -19,6 +19,7 @@ import { palette, colours, fonts, type, radius, space, cardShadow, TAP } from '.
 import DatePickerModal from './DatePickerModal';
 import LookAfterChoices from './LookAfterChoices';
 import { LOOK_AFTER_COPY, type LookAfterChoice } from '../domain/household/rules';
+import { LIMITS } from '../domain/sync/limits';
 
 const REPEAT_UNITS: RepeatUnit[] = ['days', 'weeks', 'months', 'years'];
 const MIN_REPEAT = 1;
@@ -161,6 +162,9 @@ export default function ItemForm({
             placeholderTextColor={palette.muted}
             value={name}
             onChangeText={setName}
+            // The server's limit (sync/limits.ts); a longer name saved before
+            // the limit existed still shows in full and can be shortened
+            maxLength={Math.max(LIMITS.name, initial.name.length)}
             autoCapitalize="sentences"
             returnKeyType="done"
             accessibilityLabel="Name"

@@ -21,11 +21,16 @@ import {
   withEntryDelete,
   withoutPushed,
   withoutItems,
+  withParked,
+  activeParked,
   isEmpty,
   DeleteMeta,
+  ParkedChange,
 } from './queueOps';
 
-export type { SyncQueue, EntryRef, DeleteMeta } from './queueOps';
+import { parkedMessage } from './limits';
+
+export type { SyncQueue, EntryRef, DeleteMeta, ParkedChange } from './queueOps';
 
 const QUEUE_KEY = '@since_sync_queue_v1';
 
@@ -68,10 +73,31 @@ export const enqueueEntryDelete = (ref: EntryRef) => update((q) => withEntryDele
  */
 export const removeFromQueue = (ops: Partial<SyncQueue>) => update((q) => withoutPushed(q, ops));
 
+/** What the last sync parked (changes the server refused for good, limits.ts). */
+export const parkChanges = (parked: Record<string, ParkedChange>) => update((q) => withParked(q, parked));
+
 export async function clearQueue(): Promise<void> {
   await saveQueue({ ...EMPTY_QUEUE });
 }
 
 export async function hasPending(): Promise<boolean> {
   return !isEmpty(await loadQueue());
+}
+
+/**
+ * Items whose change can't sync yet, each with what to tell the person
+ * (limits.ts). Only parkings that still apply: an item edited since will
+ * try again at the next sync.
+ */
+export async function parkedMessages(
+  items: Array<{ id: string; updatedAt: string }>,
+): Promise<Record<string, string>> {
+  const q = await loadQueue();
+  if (!q.parked) return {};
+  const out: Record<string, string> = {};
+  for (const item of items) {
+    const p = activeParked(q, item);
+    if (p) out[item.id] = parkedMessage(p.code);
+  }
+  return out;
 }

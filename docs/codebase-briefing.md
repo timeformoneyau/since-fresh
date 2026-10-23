@@ -43,7 +43,7 @@ deferred, not ported.
 - **React Navigation** (native-stack) — 10 screens (section 6).
 - **AsyncStorage** for persistence — the source of truth. Every write lands locally first and
   works offline. Keys: `@since_v1_items` (the list, storage version 3), `@since_sync_queue_v1`
-  (changes waiting to sync), `@since_sync_cursor_v1`, `@since_last_synced_v1`, `@since_owner_v1`
+  (changes waiting to sync, and any parked by a size limit), `@since_sync_cursor_v1`, `@since_last_synced_v1`, `@since_owner_v1`
   (which account owns this phone's list), `@since_household_v1` (cached household),
   `@since_snoozes_v1` (snoozes, this phone only), `@since_reminder_time_v1` (reminder time,
   this phone only), `@since_list_view_v1` (list view, this phone only).
@@ -323,7 +323,7 @@ scheduling and sync in step.
   other item fields, the last phone to push the item wins it, so an edit to another field at the
   same moment can undo someone's choice. Backup file: exported as is; an item added from a backup
   is Just me with nobody chosen, an item already on the phone keeps its own.
-- **Play hardening** (migration 006, database only; the app doesn't map the new errors yet).
+- **Play hardening** (migration 006, applied to the live project 23 Oct 2026).
   Invites: removing a member revokes the household's active codes (the owner makes a new one);
   more than 5 wrong codes from one account in 15 minutes, or 100 from everyone in 10 minutes,
   and `join_household` refuses for a while. A wrong code is *returned* as the old error
@@ -332,12 +332,27 @@ scheduling and sync in step.
   10 MiB; 20 000 entries per item; 5000 items per account; 50 members and 50 active codes per
   household. Every new error has a stable hint (`since_…`); limits on synced writes use
   SQLSTATEs `SN001`–`SN007`, errors from functions the app calls use P0001 so older builds
-  show the message. **A synced change over a limit sits in the queue and fails every sync until
-  the app handles these codes** (none of today's screens can produce one, except by pasting
-  an enormous name or note). Account deletion now also strips the account's id from
+  show the message. Account deletion now also strips the account's id from
   `items.history` and purges its soft-deleted entries; `purge_soft_deleted_history(interval)`
   (90 days minimum, not callable by apps) is there for scheduling later. A household owner can
   no longer write a tombstone naming an item outside their household.
+- **How the app handles those errors** (Play hardening B). Household and join errors are
+  mapped by hint in `household/errors.ts` (wrong code, too many tries, joining paused,
+  household full, 50 codes waiting); the join screen shows the message and keeps what was
+  typed. A wrong-code body that ever arrived as data (HTTP 200) is still read as a wrong code.
+  **Size-limit refusals are permanent, so sync parks them** (`sync/limits.ts`, `runSync.ts`):
+  before pushing, the phone checks each change against the same limits, and anything the
+  server still refuses with an SN code is retried one item at a time so it can't hold up the
+  rest. A parked change stays in the queue and on the phone (`@since_sync_queue_v1` gains an
+  optional `parked` map: item id → `{ code, updatedAt }`), isn't sent again, and the item
+  screen says "Can't sync yet" with what to change ("This name is too long to sync. Shorten it
+  and it will go through."); Account counts them. Any edit changes the item's `updatedAt`,
+  which un-parks it, and the next sync tries again; deleting an item also frees items parked
+  by the 5000-item limit. Older builds drop the field and go back to retrying (as before).
+  An entry change only checks that entry's note, so an old long note already in the cloud
+  never stops marking done. The name field stops at 500 characters and history notes at
+  5000 (`maxLength`); a longer value saved before stays in full and can be shortened.
+  Categories are chosen from chips, so there's no free-text field to limit.
 - **How sync resolves conflicts** (`domain/sync/runSync.ts`). History entries sync one by one
   (`completion_events`, migration 003), so two phones marking the same item done both keep their
   entries, and a deleted entry is soft deleted and goes everywhere. Item fields: a change still to

@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { RootStackParamList } from '../types';
 import { DerivedItem } from '../domain/items/types';
+import { LIMITS } from '../domain/sync/limits';
 import {
   getDerivedItemById,
   updateHistoryEntry,
@@ -71,6 +72,10 @@ export default function EditHistoryEntryScreen() {
   const total = item.history.length;
   const number = total - index; // oldest is entry 1
   const { min, max } = dateBounds(item, entryId, todayString());
+  // The server's limit (sync/limits.ts); a longer note saved before the
+  // limit existed still shows in full and can be shortened
+  const savedNote = item.history[index]?.note ?? '';
+  const noteLimit = Math.max(LIMITS.note, savedNote.length);
   const inRange = (min === null || date >= min) && date <= max;
 
   async function handleSave() {
@@ -143,6 +148,7 @@ export default function EditHistoryEntryScreen() {
             placeholder="Anything worth remembering"
             placeholderTextColor={palette.muted}
             testID="entry-note-input"
+            maxLength={noteLimit}
             returnKeyType="done"
           />
         </View>
