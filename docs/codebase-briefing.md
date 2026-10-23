@@ -384,6 +384,12 @@ scheduling and sync in step.
   publishes to the preview app, then production. A JavaScript-only change goes out as an EAS
   Update (open the app twice to get it); a native change starts an EAS build and the install
   link is posted on the PR. Never publish by hand. Rollback: GitHub Actions → **Rollback**.
+- **Google Play:** the `play` profile in `eas.json` builds an app bundle (AAB) for the store, on
+  the production channel; the automatic release never runs it. Michael runs it by hand
+  (`RELEASING.md`, "Google Play"). Play App Signing, with the EAS-managed key as the upload key.
+  `app.json` blocks `SYSTEM_ALERT_WINDOW` and external storage (nothing uses them; the backup
+  file uses the app's cache folder and the share sheet), and CI lists the built APK's
+  permissions, failing if a blocked one comes back.
 
 ---
 

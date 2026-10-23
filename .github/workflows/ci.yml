@@ -119,6 +119,28 @@ jobs:
         timeout-minutes: 40
         run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 --no-daemon
 
+      - name: Permissions in the release build
+        # What the built APK asks for, libraries included. Fails if a
+        # permission app.json blocks (android.blockedPermissions) is back.
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          aapt=$(ls "$ANDROID_HOME"/build-tools/*/aapt 2>/dev/null | sort -V | tail -1)
+          if [ -n "$aapt" ] && [ -f "$apk" ]; then
+            "$aapt" dump permissions "$apk" | sed -n "s/^uses-permission[^:]*: name='\([^']*\)'.*/\1/p" | sort -u > permissions.txt
+          else
+            manifest=$(find android/app/build/intermediates -name AndroidManifest.xml -path '*merged_manifest*' -path '*release*' | head -1)
+            [ -n "$manifest" ] || { echo "::error::Couldn't find the built APK or its merged manifest"; exit 1; }
+            tr '\n' ' ' < "$manifest" | grep -o '<uses-permission[^>]*>' \
+              | sed -n 's/.*android:name="\([^"]*\)".*/\1/p' | sort -u > permissions.txt
+          fi
+          cat permissions.txt
+          { echo "### Permissions in the release build"; sed 's/^/- /' permissions.txt; } >> "$GITHUB_STEP_SUMMARY"
+          for p in $(node -p "require('./app.json').expo.android.blockedPermissions.join(' ')"); do
+            if grep -qx "$p" permissions.txt; then
+              echo "::error::$p is in the release build, though app.json blocks it"; exit 1
+            fi
+          done
+
       - name: Install Maestro
         run: |
           curl -fsSL "https://get.maestro.mobile.dev" | bash
