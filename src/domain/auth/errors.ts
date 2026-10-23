@@ -18,7 +18,6 @@ export const AUTH_COPY = {
   rateLimited: 'Too many tries. Wait a minute and try again.',
   badCode: "That code isn't right or has expired. Check it, or send a new one.",
   invalidEmail: "That doesn't look like an email address. Check it and try again.",
-  emailInUse: 'That email is already used by another account.',
   network: "Couldn't reach the server. Check your connection.",
   fallback: 'Something went wrong. Please try again.',
 } as const;
@@ -57,14 +56,25 @@ export function isNetworkError(error: unknown): boolean {
 }
 
 /**
+ * Changing to an address another account already holds. Not said as such
+ * (readiness audit Q27): saying so would let any signed-in person test which
+ * addresses have accounts. The change-email flow carries on exactly as if a
+ * code had been sent; none arrives, and the code screen's wording covers
+ * that (codes.ts).
+ */
+export function isEmailTaken(error: unknown): boolean {
+  const code = authErrorCode(error);
+  return code === 'email_exists' || code === 'user_already_exists';
+}
+
+/**
  * Copy for an auth error. Pass 'change-email' from the change-email flow,
- * where "email already exists" means another account holds the new address.
+ * where "email already exists" reads the same as a wrong code (see
+ * isEmailTaken).
  */
 export function friendlyAuthError(error: unknown, context?: 'change-email'): string {
   const code = authErrorCode(error);
-  if (context === 'change-email' && (code === 'email_exists' || code === 'user_already_exists')) {
-    return AUTH_COPY.emailInUse;
-  }
+  if (context === 'change-email' && isEmailTaken(error)) return AUTH_COPY.badCode;
   if (code && BY_CODE[code]) return BY_CODE[code];
   if (isNetworkError(error)) return AUTH_COPY.network;
   if (typeof error === 'object' && error !== null && (error as ErrorLike).status === 429) {

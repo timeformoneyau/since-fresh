@@ -46,7 +46,8 @@ deferred, not ported.
   (changes waiting to sync, and any parked by a size limit), `@since_sync_cursor_v1`, `@since_last_synced_v1`, `@since_owner_v1`
   (which account owns this phone's list), `@since_household_v1` (cached household),
   `@since_snoozes_v1` (snoozes, this phone only), `@since_reminder_time_v1` (reminder time,
-  this phone only), `@since_list_view_v1` (list view, this phone only).
+  this phone only), `@since_list_view_v1` (list view, this phone only), `@since_reminder_prompt_v1` (whether the
+  reminders explanation was answered and the "Reminders are off" notice hidden, this phone only).
 - **Supabase** (`@supabase/supabase-js`) for the optional account (emailed code), sync and
   households. Absent credentials means the app runs purely local-only, with no sign-in.
 - **expo-notifications** for **local** (not push) reminders.
@@ -177,6 +178,21 @@ no passwords (`domain/auth/codes.ts`); the same code creates an account for a ne
   last backup and Sync now, the Household section (create / join via `HouseholdSetup`, invite
   and share the code, members, make owner, remove, leave, delete), change email, sign out
   (warns if changes haven't synced), delete account. Always: the backup file section.
+  Invites: the owner sees the code waiting to be used, with "Works until Fri 30 Oct";
+  "Invite someone" reuses it (a new code only when none is waiting), "Make a new code" turns
+  off every waiting code and makes one, "Turn off this code" just turns them off
+  (`revoke_invite`). Removing someone says the code stopped working too (the server revokes it)
+  and that a new one is needed to invite again.
+  Change email: an address another account already holds goes the same way as a free one (to
+  the code screen, "We're sending a code to … If nothing arrives in a few minutes, check the
+  address or try another one."); no code arrives and any code reads as wrong. So the screen
+  can't be used to find out which addresses have accounts (audit Q27).
+- **RemindersPermission** — the one-screen explanation before the phone's notification prompt
+  (below).
+- **Crash recovery** (`components/ErrorBoundary.tsx`, around the whole app): a fatal JavaScript
+  error while rendering shows "Something went wrong … Your list is saved on this phone." and
+  **Restart Since** (`Updates.reloadAsync`; where that isn't possible it shows the app again).
+  Local only: nothing is logged or sent.
 
 ---
 
@@ -218,6 +234,19 @@ Every change reschedules **everything** (there is no one-item reschedule), so th
 grouped counts always hold across items. Notifications recompute on app start, after any change
 and after every sync that changes items, and when the reminder time changes. Items the member
 muted (`item_mutes`) are skipped (`scheduler.ts`).
+
+**Permission** (`permission.ts` rules, `permissionFlow.ts`, Play hardening B). Never asked at
+launch (start-up only sets up the Android channel). Asked once, when it matters: the first time
+a repeating item is saved (Add, or Edit), if reminders aren't on, the **RemindersPermission**
+screen explains ("So we can remind you when something comes round…") with **Turn on
+reminders** and **Not now**; Back counts as Not now. Either answer is final: the explanation
+never shows again. Turn on shows the system prompt, or, once Android won't show it any more
+(`canAskAgain` false, Android 13+ after repeated refusals), opens the phone's settings. While
+reminders are off and something repeats, the list shows one calm notice ("Reminders are off, so
+Since can't nudge you. Turn them on in settings.", **Open settings** / **Hide**; hiding is for
+good), and Account/Settings → Reminders says so too. Both look again when the screen comes into
+view and when the app returns from the background; once reminders are on, every reminder is
+rescheduled.
 
 > Expo Go (SDK 53+) prints a harmless console warning about push notifications. Local notifications
 > still work; the warning disappears in a real (EAS) build.
@@ -264,7 +293,8 @@ src/
     runSync.ts            ⭐ pure merge and push rules
     queue.ts, queueOps.ts sync queue (items, entries, deletes)
     cursor.ts, ownership.ts, owner.ts, lastSynced.ts, classify.ts, backupStatus.ts
-  domain/household/       rules.ts (pure, mirrors the database rules), service.ts, cloud.ts, store.ts
+    limits.ts             size limits and which refusals are permanent (parking)
+  domain/household/       rules.ts (pure, mirrors the database rules), errors.ts, service.ts, cloud.ts, store.ts
   domain/auth/            emailed-code sign-in, email change, sign out, delete account
   domain/backup/          backup.ts (file format, restore that only adds), files.ts
   utils/
@@ -280,11 +310,12 @@ src/
     engine.ts             cancels and schedules the plan
     scheduler.ts          public API, permissions, Android channel, skips muted items, prunes snoozes
     reminderTime.ts, reminderTimeStore.ts   the one reminder time (default 9 am)
+    permission.ts         when to ask for permission (pure), permissionStore.ts, permissionFlow.ts
   screens/                MainList, AddItem, EditItem, Detail, EditHistoryEntry, Account,
                           ChangeEmail, HouseholdSetup, auth/SignIn, auth/EnterCode
   components/             ItemCard, ItemForm, LookAfterChoices, SystemStatus, StatusChip, CategoryTile,
                           DatePickerModal, Toast, HouseholdSection, useHousehold, LogoMark,
-                          ReminderTimeSection, useSyncOnResume
+                          ReminderTimeSection, useSyncOnResume, RemindersOffNotice, ErrorBoundary
   theme/tokens.ts         colours, type, spacing
   lib/supabase.ts         Supabase client (absent config → local-only)
 App.tsx                   navigation, startup (reschedule reminders), auth events
@@ -377,6 +408,9 @@ scheduling and sync in step.
   empty-list starters). Gaps are neutral memory aids, not advice.
 - **Snoozes, the reminder time and the list view live on one phone only.** Not synced and not
   in the backup file; a second phone has its own.
+- **Backup file copies don't linger** (`domain/backup/files.ts`): the file written for the share
+  sheet is deleted 30 seconds after the sheet closes (worked or not; the delay lets the app it
+  went to finish reading it), and any left from an app closed in between is cleared at start.
 - **No dark mode.**
 - **Not built yet, by design:** notifications about other members' actions, live updates,
   iOS / Sign in with Apple, more than one household per person, purging long-deleted rows,
@@ -413,5 +447,7 @@ reflect the secret move, tests and committed Supabase config; 2026-10-20 for ema
 sign-in, entry-by-entry sync, the backup file, households and automatic releases; 2026-10-21
 for sync on return, snooze ("Not yet"), reminder time and empty-list starters; 2026-10-22
 for the list view (Most urgent / By category), and for who looks after a shared item
-(migration 005, reminders to that person only, By person).
+(migration 005, reminders to that person only, By person); 2026-10-23 for Play hardening B
+(006 errors in the app's words, parked size-limit refusals, invites, the notification
+permission flow, crash recovery, backup file clean-up, change email).
 Pull directly from code — no assumptions.*

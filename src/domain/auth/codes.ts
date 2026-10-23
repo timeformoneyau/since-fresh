@@ -18,5 +18,7 @@ export function verifyTypeFor(purpose: CodePurpose): 'email' | 'email_change' {
 export function codeSentCopy(purpose: CodePurpose, email: string): string {
   return purpose === 'sign_in'
     ? `We've emailed a code to ${email}. Enter it to sign in.`
-    : `We've emailed a code to ${email}. Enter it to switch your account to this address.`;
+    // The same words whether or not the address can be used (errors.ts,
+    // isEmailTaken), so nothing here says whether it has an account
+    : `We're sending a code to ${email}. Enter it to switch your account to this address. If nothing arrives in a few minutes, check the address or try another one.`;
 }

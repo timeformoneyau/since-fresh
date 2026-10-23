@@ -14,6 +14,7 @@ import { palette, fonts, TAP } from '../theme/tokens';
 import ItemForm, { ItemFormValues } from '../components/ItemForm';
 import { useToast } from '../components/Toast';
 import { useHousehold } from '../components/useHousehold';
+import { needsReminderExplanation } from '../notifications/permissionFlow';
 import {
   canChangeSharing,
   canDelete,
@@ -69,6 +70,11 @@ export default function EditItemScreen() {
         return;
       }
       throw e;
+    }
+    // Made repeating, before reminders were ever explained
+    if (await needsReminderExplanation(values.repeatValue !== null).catch(() => false)) {
+      navigation.replace('RemindersPermission');
+      return;
     }
     navigation.goBack();
   }

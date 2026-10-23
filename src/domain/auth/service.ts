@@ -12,6 +12,7 @@
 import { requireSupabase } from '../../lib/supabase';
 import { wipeLocalAccountData } from '../sync/engine';
 import { CodePurpose, verifyTypeFor } from './codes';
+import { isEmailTaken } from './errors';
 
 export type { CodePurpose } from './codes';
 
@@ -43,17 +44,21 @@ export async function resendCode(email: string, purpose: CodePurpose): Promise<v
     return;
   }
   const { error } = await requireSupabase().auth.resend({ type: purpose, email });
-  if (error) throw error;
+  // An address another account holds reads like any other (isEmailTaken)
+  if (error && !(purpose === 'email_change' && isEmailTaken(error))) throw error;
 }
 
 /**
  * Starts an email change (F10). Supabase emails a code to the new address
  * ("Secure email change" off, so the old address is not asked). The change
  * applies once verifyCode(newEmail, code, 'email_change') succeeds.
+ *
+ * An address another account already holds resolves just the same, so the
+ * flow can't be used to find out which addresses have accounts (isEmailTaken).
  */
 export async function requestEmailChange(newEmail: string): Promise<void> {
   const { error } = await requireSupabase().auth.updateUser({ email: newEmail });
-  if (error) throw error;
+  if (error && !isEmailTaken(error)) throw error;
 }
 
 /**

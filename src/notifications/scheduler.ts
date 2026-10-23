@@ -15,6 +15,7 @@ import { isMuted } from '../domain/household/rules';
 import { loadSnoozes, saveSnoozes } from '../domain/snooze/store';
 import { pruneSnoozes } from '../domain/snooze/rules';
 import { loadReminderTime } from './reminderTimeStore';
+import { readPermission, type PermissionState } from './permission';
 
 /**
  * Reschedule every reminder for the list as it now stands.
@@ -52,18 +53,25 @@ export async function cancelAllReminders(): Promise<void> {
 }
 
 /**
- * Request notification permissions and set up the Android notification channel.
- * Call once on app startup.
+ * Set up the Android notification channel. Call once on app startup. It
+ * doesn't ask for permission: that happens once, when a repeating item is
+ * first saved (permissionFlow.ts).
  */
-export async function requestNotificationPermissions(): Promise<boolean> {
+export async function setUpReminderChannel(): Promise<void> {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
       name: 'Since reminders',
       importance: Notifications.AndroidImportance.DEFAULT,
     });
   }
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  if (existing === 'granted') return true;
-  const { status } = await Notifications.requestPermissionsAsync();
-  return status === 'granted';
+}
+
+/** Whether reminders can show, and whether Android will still show its prompt. */
+export async function getReminderPermission(): Promise<PermissionState> {
+  return readPermission(await Notifications.getPermissionsAsync());
+}
+
+/** Show the system prompt. Only from the explanation screen (permissionFlow.ts). */
+export async function askForReminderPermission(): Promise<PermissionState> {
+  return readPermission(await Notifications.requestPermissionsAsync());
 }

@@ -45,10 +45,42 @@ export async function joinHousehold(code: string, myName: string): Promise<void>
   if (refused) throw refused;
 }
 
-/** A new invite code, shown as XXXX-XXXX. */
-export async function createInvite(): Promise<string> {
+export interface Invite {
+  /** Shown as XXXX-XXXX. */
+  code: string;
+  expiresAt: string;
+}
+
+const shown = (code: string) => (code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code);
+
+/** The code people can use now (the newest), or null. Owner only. */
+export async function getActiveInvite(householdId: string): Promise<Invite | null> {
+  const [newest] = await cloud.fetchActiveInvites(householdId);
+  return newest ? { code: shown(newest.code), expiresAt: newest.expiresAt } : null;
+}
+
+/**
+ * "Invite someone": the code already waiting, if there is one, so each tap
+ * doesn't make another; otherwise a new one (7 days).
+ */
+export async function inviteCode(householdId: string): Promise<Invite> {
+  const active = await getActiveInvite(householdId);
+  if (active) return active;
   const code = await cloud.createInvite();
-  return `${code.slice(0, 4)}-${code.slice(4)}`;
+  // Read back for the server's expiry; codes last 7 days (004_households.sql)
+  return (await getActiveInvite(householdId).catch(() => null))
+    ?? { code: shown(code), expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString() };
+}
+
+/** Stop every code still waiting, so none of them can be used to join. */
+export async function revokeInvites(householdId: string): Promise<void> {
+  for (const { code } of await cloud.fetchActiveInvites(householdId)) await cloud.revokeInvite(code);
+}
+
+/** Stop the codes waiting and make a new one. */
+export async function replaceInvite(householdId: string): Promise<Invite> {
+  await revokeInvites(householdId);
+  return inviteCode(householdId);
 }
 
 export const leaveHousehold = () => cloud.leaveHousehold();

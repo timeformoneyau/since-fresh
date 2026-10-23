@@ -7,7 +7,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { friendlyAuthError, AUTH_COPY, MIN_PASSWORD_LENGTH } from './errors.ts';
+import { friendlyAuthError, isEmailTaken, AUTH_COPY, MIN_PASSWORD_LENGTH } from './errors.ts';
 import { secondsUntilResend, isValidCodeFormat, RESEND_COOLDOWN_SECONDS } from './cooldown.ts';
 
 /** Shaped like an AuthApiError from auth-js. */
@@ -108,9 +108,13 @@ describe('isValidCodeFormat', () => {
 });
 
 describe('friendlyAuthError — change email', () => {
-  test('an address held by another account', () => {
-    assert.equal(friendlyAuthError(apiError('email_exists', 422), 'change-email'), AUTH_COPY.emailInUse);
-    assert.equal(friendlyAuthError(apiError('user_already_exists', 422), 'change-email'), AUTH_COPY.emailInUse);
+  test("an address held by another account isn't revealed: it reads as a wrong code", () => {
+    assert.equal(friendlyAuthError(apiError('email_exists', 422), 'change-email'), AUTH_COPY.badCode);
+    assert.equal(friendlyAuthError(apiError('user_already_exists', 422), 'change-email'), AUTH_COPY.badCode);
+    assert.ok(isEmailTaken(apiError('email_exists', 422)));
+    assert.ok(isEmailTaken(apiError('user_already_exists', 422)));
+    assert.ok(!isEmailTaken(apiError('email_address_invalid', 400)));
+    assert.ok(!Object.values(AUTH_COPY).some((copy) => /already used by another account/.test(copy)));
   });
 
   test('outside change email the sign-up copy stands', () => {

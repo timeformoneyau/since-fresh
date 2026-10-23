@@ -30,6 +30,7 @@ import { syncNow } from '../domain/sync/engine';
 import ItemCard from '../components/ItemCard';
 import { useToast } from '../components/Toast';
 import SystemStatus from '../components/SystemStatus';
+import RemindersOffNotice from '../components/RemindersOffNotice';
 import LogoMark from '../components/LogoMark';
 import { useHousehold } from '../components/useHousehold';
 import { useSyncOnResume } from '../components/useSyncOnResume';
@@ -262,6 +263,7 @@ export default function MainListScreen() {
             <View style={styles.summaryOverlap}>
               <SystemStatus items={shown} />
             </View>
+            <RemindersOffNotice hasRepeating={items.some((i) => i.repeatValue !== null)} />
             <View style={[styles.filterRow, styles.wrap]} accessibilityRole="tablist" accessibilityLabel="View">
               {listViewsFor(inHousehold).map((v) => (
                 <TouchableOpacity
