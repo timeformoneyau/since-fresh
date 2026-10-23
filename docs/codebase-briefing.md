@@ -97,9 +97,10 @@ Due date: `nextDueDate = lastDoneDate + repeatValue · repeatUnit`. Items with n
 once off. Stored data changes are additive only (rollbacks run older code on newer data); every
 new shape gets a case in `src/domain/items/migrations.test.ts`.
 
-Cloud (`supabase/schema.sql`, migrations `002`–`005`): `items` (server-set `server_updated_at`,
+Cloud (`supabase/schema.sql`, migrations `002`–`006`): `items` (server-set `server_updated_at`,
 `kind`, `household_id`, `looked_after_by`), `deleted_items` (tombstones), `completion_events` (one row per entry,
-soft deleted), `households`, `household_members`, `household_invites`, `item_mutes`.
+soft deleted), `households`, `household_members`, `household_invites`, `item_mutes`,
+`household_join_failures` (failed invite codes, for the rate limit; no client access).
 Membership changes only through database functions (`create_household`, `create_invite`,
 `join_household`, `leave_household`, `remove_member`, `transfer_ownership`,
 `delete_household`, `delete_user`).
@@ -322,6 +323,21 @@ scheduling and sync in step.
   other item fields, the last phone to push the item wins it, so an edit to another field at the
   same moment can undo someone's choice. Backup file: exported as is; an item added from a backup
   is Just me with nobody chosen, an item already on the phone keeps its own.
+- **Play hardening** (migration 006, database only; the app doesn't map the new errors yet).
+  Invites: removing a member revokes the household's active codes (the owner makes a new one);
+  more than 5 wrong codes from one account in 15 minutes, or 100 from everyone in 10 minutes,
+  and `join_household` refuses for a while. A wrong code is *returned* as the old error
+  (P0002, HTTP 404) so the failure is kept; codes are uniform (no modulo or UUID-byte bias).
+  Limits: name 500, category 100, note 5000 characters; `items.history` 20 000 entries and
+  10 MiB; 20 000 entries per item; 5000 items per account; 50 members and 50 active codes per
+  household. Every new error has a stable hint (`since_…`); limits on synced writes use
+  SQLSTATEs `SN001`–`SN007`, errors from functions the app calls use P0001 so older builds
+  show the message. **A synced change over a limit sits in the queue and fails every sync until
+  the app handles these codes** (none of today's screens can produce one, except by pasting
+  an enormous name or note). Account deletion now also strips the account's id from
+  `items.history` and purges its soft-deleted entries; `purge_soft_deleted_history(interval)`
+  (90 days minimum, not callable by apps) is there for scheduling later. A household owner can
+  no longer write a tombstone naming an item outside their household.
 - **How sync resolves conflicts** (`domain/sync/runSync.ts`). History entries sync one by one
   (`completion_events`, migration 003), so two phones marking the same item done both keep their
   entries, and a deleted entry is soft deleted and goes everywhere. Item fields: a change still to
@@ -337,8 +353,8 @@ scheduling and sync in step.
 - **Time zones:** entry dates are local calendar dates; members in different time zones can see
   an entry on different days. Not handled yet.
 - **Supabase is configured** (`extra.supabaseUrl` / publishable `extra.supabaseAnonKey` in
-  `app.json`; schema in `supabase/schema.sql`; migrations 003 and 004 applied 20 Oct 2026;
-  005 (who looks after a shared item) is run by hand before the build that shows it).
+  `app.json`; schema in `supabase/schema.sql`; migrations 003 and 004 applied 20 Oct 2026,
+  005 on 23 Oct 2026; 006 (Play hardening) is run by hand, in order, after 005).
   Sign-in, sync, the backup file and households pass automated tests but haven't been
   exercised on a real phone or with two real accounts yet.
 - **No iOS path exercised** (package/bundle id `com.since.app`; EAS project `since-fresh`, 3c35d81c).
@@ -353,7 +369,9 @@ scheduling and sync in step.
 - **Tests** (all in CI, see `TESTING.md`): `npx tsc --noEmit`; `npm test` (Node's test runner,
   `src/**/*.test.ts`: sync, entries, ownership, migrations, backup, household rules, history,
   display, undo, auth); `npm run test:ui` (Jest + jest-expo, `*.ui.test.tsx`); database tests
-  (`supabase/tests/run.sh`, access rules as owner, member and outsider); Maestro flows in
+  (`supabase/tests/run.sh`: access rules as owner, member and outsider, older-build writes,
+  limits; it also checks a fresh and an upgraded project end with identical tables, policies,
+  functions and grants); Maestro flows in
   `.maestro/` on an emulator. Notification scheduling has unit tests (`plan.test.ts`);
   status/date logic still has none of its own.
 
