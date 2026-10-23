@@ -67,7 +67,9 @@ select _check(current_setting('t.code') ~ '^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}
 
 select _as(:m);
 select _check((select count(*) = 0 from public.households), 'M can''t see the household before joining');
-select _fails($$select public.join_household('ZZZZ-ZZZZ', 'Alex')$$, 'P0002', 'a wrong code is refused');
+-- A wrong code comes back as an error response (P0002, HTTP 404) rather
+-- than a raised error, so the failed attempt stays recorded (migration 006)
+select _check((public.join_household('ZZZZ-ZZZZ', 'Alex')->>'code') = 'P0002', 'a wrong code is refused');
 select public.join_household(
   lower(substr(current_setting('t.code'), 1, 4) || '-' || substr(current_setting('t.code'), 5)), ' Alex ');
 select _check((select count(*) = 2 from public.household_members), 'M joins with the code, typed with a dash and in lower case');
@@ -94,8 +96,8 @@ insert into public.household_invites (code, household_id, expires_at)
   values ('EXPRDCDE', current_setting('t.hid')::uuid, now() - interval '1 day');
 set role authenticated;
 select _as(:x);
-select _fails(format($$select public.join_household(%L, 'X')$$, current_setting('t.revoked')), 'P0002', 'a revoked code is refused');
-select _fails($$select public.join_household('EXPRDCDE', 'X')$$, 'P0002', 'an expired code is refused');
+select _check((public.join_household(current_setting('t.revoked'), 'X')->>'code') = 'P0002', 'a revoked code is refused');
+select _check((public.join_household('EXPRDCDE', 'X')->>'code') = 'P0002', 'an expired code is refused');
 
 -- ─── Personal and shared items ──────────────────────────────────────────────
 select _as(:o);
