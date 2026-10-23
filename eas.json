@@ -28,6 +28,15 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "play": {
+      "autoIncrement": true,
+      "environment": "production",
+      "channel": "production",
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {

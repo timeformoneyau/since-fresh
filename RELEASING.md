@@ -78,6 +78,26 @@ The first release after a native change starts a build for each app. When the PR
 
 From then on, JavaScript-only changes arrive without reinstalling.
 
+## Google Play: making the app bundle (you, when uploading to Play)
+
+The automatic release only builds APKs, which install straight onto your phone. Google Play needs an **Android App Bundle (AAB)** instead, made with the `play` build profile. Nothing makes it automatically.
+
+On your computer, in a terminal:
+
+1. Get the code: `git clone https://github.com/timeformoneyau/since-fresh`, then `cd since-fresh` and `npm ci`. (Already have it? `git pull` then `npm ci`.)
+2. Sign in to Expo: `npx eas-cli@25.2.0 login`, with the account that owns **since-fresh**.
+3. Build the bundle: `npx eas-cli@25.2.0 build --platform android --profile play`
+
+What to expect:
+- **No questions about keys.** It reuses the signing key EAS already holds for `com.since.app`, the one your production APKs are signed with. If it offers to generate a new keystore, answer **no** and tell Claude: it means EAS isn't finding the existing one.
+- The version number goes up by one by itself (it's shared with the production APKs).
+- The build waits in EAS's queue, then takes about 10–20 minutes. When it says **Finished**, open it on [expo.dev](https://expo.dev) → **since-fresh** → **Builds** → **Download**. You get an `.aab` file. It can't be installed on a phone; it's only for uploading to Play Console.
+- It's on the **production** channel, so once installed from Play it gets the same over-the-air updates as your Since app.
+
+**Signing: Play App Signing, with the key EAS manages.** When Play Console asks how to sign the app, keep the default: **let Google manage and protect your app signing key**. Google then signs what people download. The key EAS holds becomes your **upload key**: Play only accepts bundles signed with it, and if it's ever lost, Google can reset it from Play Console without affecting anyone's app. Don't download or move the key; EAS keeps it.
+
+**After a native change** (the PR comment says "new build needed"), the automatic release makes new APKs but no new bundle. Run step 3 again before uploading that version to Play.
+
 ## What can still go wrong
 
 - **A bad change that passed every test.** Tests can't check everything: your keyboard, your phone's insets, real sync, notification timing. With no approval step, these reach both apps straight away. That's what the PR's "Check on your phone" list and **Rollback** are for.
