@@ -140,6 +140,13 @@ jobs:
               echo "::error::$p is in the release build, though app.json blocks it"; exit 1
             fi
           done
+          # Android auto backup stays off (app.json android.allowBackup)
+          manifest=$(find android/app/build/intermediates -name AndroidManifest.xml -path '*merged_manifest*' -path '*release*' | head -1)
+          [ -n "$manifest" ] || { echo "::error::Couldn't find the release build's merged manifest"; exit 1; }
+          if ! tr '\n' ' ' < "$manifest" | grep -o '<application[^>]*>' | grep -q 'android:allowBackup="false"'; then
+            echo "::error::The release build allows Android auto backup"; exit 1
+          fi
+          echo "- allowBackup: false" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Maestro
         run: |

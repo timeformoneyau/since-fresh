@@ -6,6 +6,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { createHousehold, joinHousehold, householdErrorMessage } from '../domain/household/service';
+import { HOUSEHOLD_RULES, agreeToRulesText } from '../domain/household/report';
 import { syncNow } from '../domain/sync/engine';
 import { colours } from '../theme/tokens';
 import { authStyles as s } from './auth/authStyles';
@@ -95,6 +96,10 @@ export default function HouseholdSetupScreen() {
           </View>
 
           {error !== '' && <Text style={s.errorText}>{error}</Text>}
+
+          <Text style={s.subheading} testID="household-rules">
+            {HOUSEHOLD_RULES} {agreeToRulesText(joining)}
+          </Text>
 
           <TouchableOpacity
             style={[s.primaryBtn, saving && s.btnDisabled]}

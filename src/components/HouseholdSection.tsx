@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Share } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Share, Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -19,6 +19,7 @@ import {
   type Invite,
 } from '../domain/household/service';
 import { syncNow } from '../domain/sync/engine';
+import { SUPPORT_EMAIL, HOUSEHOLD_RULES, reportProblemUrl } from '../domain/household/report';
 import { useHousehold } from './useHousehold';
 import { colours, fonts } from '../theme/tokens';
 
@@ -216,6 +217,13 @@ export default function HouseholdSection() {
     );
   }
 
+  /** Opens an email to support; says where to write if there's no email app. */
+  function handleReport(url: string) {
+    Linking.openURL(url).catch(() => {
+      Alert.alert('No email app found', `Email ${SUPPORT_EMAIL.trim()} and say what happened and who or what it's about.`);
+    });
+  }
+
   if (!household) {
     return (
       <View style={styles.section}>
@@ -244,6 +252,8 @@ export default function HouseholdSection() {
   }
 
   const alone = household.members.length <= 1;
+  // Hidden until there's an address to send reports to (report.ts)
+  const reportUrl = reportProblemUrl(SUPPORT_EMAIL, household);
 
   return (
     <View style={styles.section} testID="household-section">
@@ -332,6 +342,18 @@ export default function HouseholdSection() {
           To leave, tap someone and make them the owner first. Tap a person to remove them.
         </Text>
       )}
+
+      <Text style={[styles.note, styles.rules]} testID="household-rules">{HOUSEHOLD_RULES}</Text>
+      {reportUrl && (
+        <TouchableOpacity
+          style={styles.rowButton}
+          testID="household-report-button"
+          onPress={() => handleReport(reportUrl)}
+          accessibilityRole="link"
+        >
+          <Text style={styles.rowButtonText}>Report a problem</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -373,4 +395,5 @@ const styles = StyleSheet.create({
   },
   rowButtonText: { fontFamily: fonts.regular, fontSize: 15, color: colours.textPrimary },
   danger: { color: colours.destructive },
+  rules: { marginTop: 16 },
 });
