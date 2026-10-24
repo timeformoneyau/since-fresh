@@ -102,6 +102,17 @@ it('Turn on shows the system prompt, and once granted everything is scheduled', 
   expect(schedule).toHaveBeenCalled();
 });
 
+it('reminders are plain date triggers, so they schedule without the exact-alarm permission', async () => {
+  render(<App />);
+  await addRepeating('Filter');
+  fireEvent.press(await screen.findByTestId('reminders-turn-on-button'));
+
+  await waitFor(() => expect(schedule).toHaveBeenCalled());
+  for (const [request] of schedule.mock.calls) {
+    expect(request.trigger).toEqual({ type: 'date', date: expect.any(Date) });
+  }
+});
+
 it("once Android won't show its prompt again, the button opens settings instead", async () => {
   getPermissions.mockResolvedValue(DENIED_FOR_GOOD);
   render(<App />);
