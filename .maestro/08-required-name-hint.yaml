@@ -4,7 +4,9 @@ name: Save with no name shows the required-field hint
 - runFlow: subflows/launch.yaml
 - tapOn:
     id: "empty-add-button"
-- assertVisible: "Does it repeat\\?"
+# Add has opened (the first card below the name; "Does it repeat?" is now
+# further down, under the keyboard)
+- assertVisible: "How do you want to track it\\?"
 # The name field takes focus on open; close the keyboard so Save shows
 - hideKeyboard
 - scrollUntilVisible:
