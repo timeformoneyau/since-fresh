@@ -153,3 +153,22 @@ describe('same-day check', () => {
     assert.equal(hasEntryOn(HAIRCUT, TODAY), false);
   });
 });
+
+describe("Until it's due: a date item's history may be empty", () => {
+  const rego = (dates: string[]) =>
+    item(dates, { dueDate: '2026-12-05', createdAt: new Date(2026, 9, 1, 9).toISOString() });
+
+  test('its only entry can be deleted, and it goes back to not done yet', () => {
+    const after = deleteEntry(rego(['2026-10-10']), 'e0', NOW);
+    assert.deepEqual(after.history, []);
+    // lastDoneDate is the day it was added again
+    assert.equal(after.lastDoneDate, '2026-10-01');
+  });
+
+  test('a past entry can be added to one not done yet', () => {
+    const empty = { ...rego([]), lastDoneDate: '2026-10-01' };
+    const after = addEntry(empty, { id: 'p', date: '2026-09-20' }, TODAY, NOW);
+    assert.equal(after.lastDoneDate, '2026-09-20');
+    assert.equal(after.dueDate, '2026-12-05');
+  });
+});

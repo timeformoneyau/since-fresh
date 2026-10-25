@@ -22,11 +22,17 @@ export interface SinceItem {
   id: string;
   name: string;
   category: string;
-  lastDoneDate: string; // ISO date string (YYYY-MM-DD)
   /**
-   * Completion log, newest first (by date). Never empty for a stored item.
-   * lastDoneDate is kept for older builds, and always equals history[0].date
-   * after any change (domain/items/history.ts, withHistory).
+   * ISO date string (YYYY-MM-DD). Always a string, for older builds (they
+   * drop an item without one). Equals history[0].date after any change
+   * (domain/items/history.ts, withHistory). An item tracked until a due date
+   * and not done yet has no history: this is then the day it was added, and
+   * means "not done yet" (domain/items/due.ts, lastDoneOf).
+   */
+  lastDoneDate: string;
+  /**
+   * Completion log, newest first (by date). Never empty, except on an item
+   * tracked until a due date that hasn't been done yet.
    */
   history: CompletionEvent[];
   repeatValue: number | null;
@@ -47,6 +53,14 @@ export interface SinceItem {
    * on a shared item; household/rules.ts lookedAfterBy() ignores it otherwise.
    */
   lookedAfterBy?: string | null;
+  /**
+   * "Until it's due" (YYYY-MM-DD): the next due date, set by the person
+   * rather than worked out from the last done date and the repeat. Absent or
+   * null means "Since I last did it", as before. Done on a repeating item moves
+   * it on by the repeat; on a one-off item it clears, and the item becomes a
+   * once-off record (domain/items/due.ts).
+   */
+  dueDate?: string | null;
 }
 
 export type StatusLabel =
@@ -79,7 +93,7 @@ export const DEFAULT_CATEGORIES = [
 export type RootStackParamList = {
   Main: undefined;
   /** A starter tapped on the empty list opens Add filled in with it. */
-  Add: { name: string; category: string } | undefined;
+  Add: { name: string; category: string; until?: { repeat: boolean } } | undefined;
   Edit: { itemId: string };
   Detail: { itemId: string };
   EditEntry: { itemId: string; entryId: string };

@@ -23,6 +23,7 @@ import type { ReminderTime } from '../../notifications/reminderTime';
 import { enqueueUpsert, enqueueDelete, enqueueEntryUpsert, enqueueEntryDelete, parkedMessages } from '../sync/queue';
 import { syncInBackground } from '../sync/engine';
 import { withoutCompletion, copyForRestore } from './undo';
+import { isDateItem, isDueDate, dueDateAfterDone } from './due';
 import {
   withHistory,
   hasEntryOn,
@@ -153,20 +154,29 @@ export async function clearSnooze(itemId: string): Promise<void> {
 /** Refused here, as the server would refuse it (005_looked_after_by.sql). */
 const LOOK_AFTER_REFUSED = 'Only someone in the household can look after a shared item.';
 
+/** Refused here, so a date the server would refuse never sits in the sync queue. */
+const DUE_DATE_REFUSED = 'Choose a due date.';
+const SWITCH_REFUSED = "An item can't switch between \"since\" and \"until\" yet.";
+
 /**
  * Create a new item, persist it, and schedule its notifications.
  *
- * Every item is seeded with an initial history entry, so the log starts
- * from the date the user says it was last done.
+ * A "since" item is seeded with an initial history entry, so the log starts
+ * from the date the user says it was last done. A date item ("until it's
+ * due") starts with no history: it hasn't been done yet, and lastDoneDate is
+ * today, the day it was added (due.ts).
  */
 export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
   const now = new Date().toISOString();
-  const history: CompletionEvent[] = [{ id: generateId(), date: input.lastDoneDate, createdAt: now }];
+  const dated = input.dueDate !== undefined && input.dueDate !== null;
+  if (dated && !isDueDate(input.dueDate)) throw new Error(DUE_DATE_REFUSED);
+  const lastDoneDate = dated ? todayString() : input.lastDoneDate;
+  const history: CompletionEvent[] = dated ? [] : [{ id: generateId(), date: lastDoneDate, createdAt: now }];
   const item: SinceItem = {
     id: generateId(),
     name: input.name,
     category: input.category,
-    lastDoneDate: input.lastDoneDate,
+    lastDoneDate,
     history,
     repeatValue: input.repeatValue,
     repeatUnit: input.repeatUnit,
@@ -174,6 +184,7 @@ export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
     updatedAt: now,
     ...(input.householdId ? { householdId: input.householdId } : {}),
     ...(input.householdId && input.lookedAfterBy ? { lookedAfterBy: input.lookedAfterBy } : {}),
+    ...(dated ? { dueDate: input.dueDate } : {}),
   };
   if (!canLookAfter(item, item.lookedAfterBy ?? null, await loadHouseholdState())) {
     throw new Error(LOOK_AFTER_REFUSED);
@@ -194,10 +205,18 @@ export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
  *
  * A changed lastDoneDate edits the newest history entry (within the same
  * bounds as editing it on the item screen), since lastDoneDate always comes
- * from the history. Throws HistoryError when the date isn't allowed.
+ * from the history. Throws HistoryError when the date isn't allowed. A date
+ * item not done yet has no entry to edit, so its lastDoneDate stays put.
+ *
+ * A date item's due date can change; an item can't become, or stop being, a
+ * date item here (v1).
  */
 export async function updateItem(itemId: string, updates: UpdateItemInput): Promise<DerivedItem> {
   const { items, existing } = await loadOne(itemId);
+  if (updates.dueDate !== undefined) {
+    if (!isDateItem(existing)) throw new Error(SWITCH_REFUSED);
+    if (!isDueDate(updates.dueDate)) throw new Error(DUE_DATE_REFUSED);
+  }
   // The server refuses a sharing change from anyone but the item's creator
   // (004_households.sql); refused here so it never sits in the sync queue.
   if (
@@ -230,7 +249,7 @@ export async function updateItem(itemId: string, updates: UpdateItemInput): Prom
   ) {
     throw new Error(LOOK_AFTER_REFUSED);
   }
-  if (lastDoneDate !== undefined && lastDoneDate !== existing.lastDoneDate) {
+  if (lastDoneDate !== undefined && lastDoneDate !== existing.lastDoneDate && existing.history.length > 0) {
     const newest = sortNewestFirst(existing.history)[0];
     updated = updateEntry(updated, newest.id, { date: lastDoneDate }, todayString(), now);
     return persist(items, updated, { fields: true, entryChanged: newest.id });
@@ -252,6 +271,11 @@ export async function setLookedAfterBy(itemId: string, userId: string | null): P
  * Mark an item as done today (or on a specific date): adds a history entry.
  * Doing it twice on the same day changes nothing, and entryId is then null
  * (there's nothing to undo).
+ *
+ * A date item ("until it's due", due.ts) also moves its due date: on by the
+ * repeat from the previous due date, until it's after the day done, or, if
+ * it doesn't repeat, cleared, so it becomes a once-off record. That's a
+ * field change too, so the fields are queued for sync with the entry.
  */
 export async function markItemDone(
   itemId: string,
@@ -262,8 +286,10 @@ export async function markItemDone(
   if (hasEntryOn(existing, date)) return { item: deriveItem(existing), entryId: null };
 
   const entryId = generateId();
-  const updated = addEntry(existing, { id: entryId, date }, todayString(), new Date().toISOString());
-  return { item: await persist(items, updated, { entryChanged: entryId }), entryId };
+  let updated = addEntry(existing, { id: entryId, date }, todayString(), new Date().toISOString());
+  const dated = isDateItem(existing);
+  if (dated) updated = { ...updated, dueDate: dueDateAfterDone(existing, date) };
+  return { item: await persist(items, updated, { entryChanged: entryId, fields: dated }), entryId };
 }
 
 /** Add a past entry ("Did it on another day?"). Throws HistoryError for a future date. */
@@ -297,19 +323,22 @@ export async function deleteHistoryEntry(itemId: string, entryId: string): Promi
 
 /**
  * Undo a completion recorded by markItemDone (see undo.ts for the rules).
- * Returns the item unchanged when there is nothing to undo.
+ * Returns the item unchanged when there is nothing to undo. previousDueDate
+ * (the item's dueDate just before, null if none) puts a date item's due date
+ * back; that change is queued for sync with the entry's removal.
  */
 export async function undoMarkDone(
   itemId: string,
   eventId: string,
   previousLastDoneDate?: string,
+  previousDueDate?: string | null,
 ): Promise<DerivedItem> {
   const items = await loadItems();
   const existing = items.find((i) => i.id === itemId);
   if (!existing) throw new Error(`Item not found: ${itemId}`);
 
   const now = new Date().toISOString();
-  const undone = withoutCompletion(existing, eventId, now, previousLastDoneDate);
+  const undone = withoutCompletion(existing, eventId, now, previousLastDoneDate, previousDueDate);
   if (!undone) return deriveItem(existing);
   const updated = withHistory(undone, undone.history, now);
 
@@ -317,6 +346,7 @@ export async function undoMarkDone(
   await saveItems(next);
   await rescheduleAllNotifications(next);
 
+  if ((updated.dueDate ?? null) !== (existing.dueDate ?? null)) await enqueueUpsert(updated.id);
   await enqueueEntryDelete({ itemId: updated.id, entryId: eventId });
   syncInBackground();
   notifyItemsChanged();

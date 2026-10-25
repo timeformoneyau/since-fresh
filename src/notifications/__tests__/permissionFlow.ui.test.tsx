@@ -60,11 +60,21 @@ it('is never asked for at launch', async () => {
 it('a once-off item asks nothing', async () => {
   render(<App />);
   fireEvent.press(await screen.findByTestId('empty-add-button', {}, LIST_LOADS));
-  fireEvent.changeText(await screen.findByTestId('add-name-input'), 'Passport');
+  // ("Passport" would start on "Until it's due", which has reminders)
+  fireEvent.changeText(await screen.findByTestId('add-name-input'), 'Haircut');
   fireEvent.press(screen.getByTestId('add-onceoff-option'));
   fireEvent.press(screen.getByTestId('add-save-button'));
-  await screen.findByTestId('item-Passport');
+  await screen.findByTestId('item-Haircut');
   expect(screen.queryByTestId('reminders-permission-screen')).toBeNull();
+});
+
+it("a one-off date item (\"Until it's due\") is reminded, so it explains first", async () => {
+  render(<App />);
+  fireEvent.press(await screen.findByTestId('empty-add-button', {}, LIST_LOADS));
+  fireEvent.changeText(await screen.findByTestId('add-name-input'), 'Passport');
+  fireEvent.press(screen.getByTestId('add-due-in-1-year'));
+  fireEvent.press(screen.getByTestId('add-save-button'));
+  expect(await screen.findByText(REMINDERS_COPY.body)).toBeTruthy();
 });
 
 it('the first repeating item explains first; Not now is a real answer and is never asked again', async () => {

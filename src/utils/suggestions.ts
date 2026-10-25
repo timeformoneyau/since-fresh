@@ -9,6 +9,8 @@ interface Suggestion {
 interface Starter {
   name: string;
   category: string;
+  /** Opens on "Until it's due" (the due date is asked), repeating after it when `repeat`. */
+  until?: { repeat: boolean };
 }
 
 /**
@@ -22,7 +24,7 @@ const RULES: Array<{ keywords: string[]; suggestion: Suggestion; starter?: Start
   { keywords: ['smoke', 'alarm', 'detector', 'battery'], suggestion: { repeatValue: 12, repeatUnit: 'months' }, starter: { name: 'Smoke alarm battery', category: 'Household' } },
   { keywords: ['dentist', 'dental', 'hygienist'], suggestion: { repeatValue: 6, repeatUnit: 'months' }, starter: { name: 'Dentist', category: 'Health' } },
   { keywords: ['car service', 'car serv', 'oil change', 'service car'], suggestion: { repeatValue: 12, repeatUnit: 'months' }, starter: { name: 'Car service', category: 'Auto' } },
-  { keywords: ['rego', 'registration'], suggestion: { repeatValue: 12, repeatUnit: 'months' }, starter: { name: 'Car rego', category: 'Auto' } },
+  { keywords: ['rego', 'registration'], suggestion: { repeatValue: 12, repeatUnit: 'months' }, starter: { name: 'Car rego', category: 'Auto', until: { repeat: true } } },
   { keywords: ['air-con', 'aircon', 'air con', 'split system'], suggestion: { repeatValue: 3, repeatUnit: 'months' }, starter: { name: 'Air-con filter', category: 'Household' } },
   { keywords: ['gutter'], suggestion: { repeatValue: 12, repeatUnit: 'months' }, starter: { name: 'Gutters', category: 'Household' } },
   { keywords: ['pest', 'termite'], suggestion: { repeatValue: 12, repeatUnit: 'months' }, starter: { name: 'Pest inspection', category: 'Household' } },
@@ -45,6 +47,20 @@ export function getSuggestion(name: string): Suggestion | null {
     }
   }
   return null;
+}
+
+/**
+ * Names that usually have a date to work to rather than a last time done.
+ * Add only preselects "Until it's due" for them; nothing else changes.
+ */
+const UNTIL_KEYWORDS = [
+  'rego', 'registration', 'licence', 'license', 'passport', 'subscription', 'trial', 'renewal', 'insurance',
+];
+
+/** Whether Add should start on "Until it's due" for this name. */
+export function suggestsUntil(name: string): boolean {
+  const lower = name.toLowerCase().trim();
+  return lower.length >= 3 && UNTIL_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 /** The starters, in the order shown, each with its usual gap. */

@@ -1,0 +1,67 @@
+appId: com.since.app
+name: Until it's due - car rego, repeating yearly, Done moves the next due date a year on
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Car rego"
+- hideKeyboard
+# "Car rego" starts on "Until it's due"; no last-done date is asked
+- assertVisible:
+    id: "add-track-until"
+- assertNotVisible:
+    id: "add-last-done-button"
+- scrollUntilVisible:
+    element:
+      id: "add-due-in-1-year"
+- tapOn:
+    id: "add-due-in-1-year"
+- scrollUntilVisible:
+    element:
+      id: "add-repeat-after-yes"
+- tapOn:
+    id: "add-repeat-after-yes"
+# Repeats every 1 year
+- scrollUntilVisible:
+    element:
+      id: "add-repeat-value"
+- assertVisible:
+    id: "add-repeat-value"
+    text: "1"
+- assertVisible:
+    id: "add-unit-years"
+    selected: true
+- takeScreenshot: 17-until-rego-add
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Car rego"
+    timeout: 10000
+# Due a year from today
+- assertVisible:
+    id: "item-Car rego-meta"
+    text: "Due .* ${new Date().getFullYear() + 1}"
+- assertVisible: "Due in .* days"
+- takeScreenshot: 17-until-rego-card
+# Renewed early: the next due date moves on a year from the old one
+- tapOn:
+    id: "item-Car rego-done"
+- assertVisible:
+    id: "item-Car rego-meta"
+    text: "Due .* ${new Date().getFullYear() + 2}"
+- tapOn:
+    id: "item-Car rego-history"
+- extendedWaitUntil:
+    visible:
+      id: "detail-status-card"
+    timeout: 10000
+- assertVisible: "Next due"
+- assertVisible:
+    id: "history-entry-0"
+- takeScreenshot: 17-until-rego-done

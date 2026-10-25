@@ -30,6 +30,8 @@ export interface ItemRow {
   household_id?: string | null;
   /** Migration 005: the member who looks after it, or null for Anyone. */
   looked_after_by?: string | null;
+  /** Migration 007: "until it's due" (YYYY-MM-DD), or null. */
+  due_date?: string | null;
 }
 
 interface EntryDbRow {
@@ -64,6 +66,7 @@ export function rowToItem(row: ItemRow, me: string): CloudItem {
     ...(row.user_id !== me ? { ownerId: row.user_id } : {}),
     ...(row.household_id !== undefined ? { householdId: row.household_id } : {}),
     ...(row.looked_after_by !== undefined ? { lookedAfterBy: row.looked_after_by } : {}),
+    ...(row.due_date !== undefined ? { dueDate: row.due_date } : {}),
   };
 }
 
@@ -126,7 +129,9 @@ async function allPages<T>(
  * once someone has been chosen (or the item came from a project with
  * migration 005), so builds talking to a project without those migrations
  * never send them. A personal item always sends null: the server refuses a
- * person on an item with no household.
+ * person on an item with no household. due_date is sent the same way: only
+ * once an item has had one (a date item, or one that was), so a "since" item
+ * never sends it and older rows are left as they are.
  */
 export function itemToRow(item: SinceItem, userId: string): ItemRow {
   return {
@@ -134,6 +139,7 @@ export function itemToRow(item: SinceItem, userId: string): ItemRow {
     user_id: item.ownerId ?? userId,
     ...(item.householdId !== undefined ? { household_id: item.householdId } : {}),
     ...(item.lookedAfterBy !== undefined ? { looked_after_by: lookedAfterBy(item) } : {}),
+    ...(item.dueDate !== undefined ? { due_date: item.dueDate } : {}),
     name: item.name,
     category: item.category,
     last_done_date: item.lastDoneDate,

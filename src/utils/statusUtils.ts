@@ -1,11 +1,6 @@
-import { SinceItem, StatusLabel, ItemStatus } from '../types';
-import {
-  getDaysSince,
-  getNextDueDate,
-  getDaysUntilDue,
-  intervalToDays,
-  comingUpThreshold,
-} from './dateUtils';
+import type { SinceItem, StatusLabel, ItemStatus } from '../types';
+import { getDaysSince, getDaysUntilDue } from './dateUtils.ts';
+import { nextDueOf, comingUpDays } from '../domain/items/due.ts';
 
 /** Shared label assignment once a due date + "coming up" threshold are known. */
 function labelForDaysUntilDue(daysUntilDue: number, threshold: number): StatusLabel {
@@ -17,18 +12,22 @@ function labelForDaysUntilDue(daysUntilDue: number, threshold: number): StatusLa
   return 'Long overdue';
 }
 
+/**
+ * The item's status against its due date: last done + repeat, or the date
+ * set on a date item ("until it's due", domain/items/due.ts). daysSince
+ * counts from lastDoneDate, which on a date item not done yet is the day it
+ * was added, so the progress bar runs from then to the due date.
+ */
 export function computeItemStatus(item: SinceItem): ItemStatus {
   const daysSince = getDaysSince(item.lastDoneDate);
+  const nextDueDate = nextDueOf(item);
 
-  if (item.repeatValue === null || item.repeatUnit === null) {
+  if (nextDueDate === null) {
     return { label: null, daysSince, daysUntilDue: null, nextDueDate: null };
   }
 
-  const nextDueDate = getNextDueDate(item.lastDoneDate, item.repeatValue, item.repeatUnit);
   const daysUntilDue = getDaysUntilDue(nextDueDate);
-  const approxInterval = intervalToDays(item.repeatValue, item.repeatUnit);
-  const threshold = comingUpThreshold(approxInterval);
-  const label = labelForDaysUntilDue(daysUntilDue, threshold);
+  const label = labelForDaysUntilDue(daysUntilDue, comingUpDays(item)!);
 
   return { label, daysSince, daysUntilDue, nextDueDate };
 }

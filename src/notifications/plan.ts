@@ -4,8 +4,11 @@
  *
  * Design philosophy: "a quiet, reliable system that only speaks up when it matters."
  *
- *   Per-item notifications (3 per repeat item):
- *     1. Coming up   — interval-aware advance notice (e.g. 7 days before for a monthly item)
+ *   Per-item notifications (3 per item with a due date: repeating, or a date
+ *   item, "until it's due", domain/items/due.ts):
+ *     1. Coming up   — interval-aware advance notice (e.g. 3 days before for a
+ *                      monthly item; 1 to 45 days by interval). Date items get
+ *                      at least 7 days
  *     2. Due today   — fires on the nextDueDate
  *     3. 7 days overdue — a single early overdue nudge
  *
@@ -42,12 +45,8 @@
 
 import { differenceInCalendarDays, addDays, format, startOfDay } from 'date-fns';
 import type { SinceItem } from '../types';
-import {
-  getNextDueDate,
-  intervalToDays,
-  comingUpThreshold,
-  parseDate,
-} from '../utils/dateUtils.ts';
+import { parseDate } from '../utils/dateUtils.ts';
+import { nextDueOf, comingUpDays } from '../domain/items/due.ts';
 import { activeSnoozeUntil, type Snoozes } from '../domain/snooze/rules.ts';
 import { lookedAfterBy } from '../domain/household/rules.ts';
 
@@ -158,19 +157,17 @@ export function applyDailyCap(pending: PlannedNotification[], now: Date): Planne
 // ─── Per-item notification builder ────────────────────────────────────────────
 
 /**
- * Computes the lifecycle notifications for one repeat item.
- * Returns empty array for non-repeating items (nothing to schedule).
+ * Computes the lifecycle notifications for one item with a due date.
+ * Returns empty array for once-off records (nothing to schedule).
  *
  * Notification language deliberately avoids appointment-style phrasing.
  * e.g. "Dentist due in 7 days" not "Dentist coming up in 7 days".
  */
 function buildItemNotifications(item: SinceItem, opts: PlanOptions): PlannedNotification[] {
-  if (!item.repeatValue || !item.repeatUnit) return [];
+  const nextDue = nextDueOf(item);
+  if (!nextDue) return [];
   const time = opts.time ?? DEFAULT_REMINDER_TIME;
-
-  const nextDue = getNextDueDate(item.lastDoneDate, item.repeatValue, item.repeatUnit);
-  const approxInterval = intervalToDays(item.repeatValue, item.repeatUnit);
-  const threshold = comingUpThreshold(approxInterval);
+  const threshold = comingUpDays(item)!;
   const end = snoozeEnd(item, opts);
 
   const all: PlannedNotification[] = [
@@ -229,11 +226,10 @@ function buildGroupedNotifications(items: SinceItem[], opts: PlanOptions): Plann
   const seenDays = new Set<string>();
   const results: PlannedNotification[] = [];
 
-  const repeating = items.flatMap((item) =>
-    item.repeatValue && item.repeatUnit
-      ? [{ nextDue: getNextDueDate(item.lastDoneDate, item.repeatValue, item.repeatUnit), end: snoozeEnd(item, opts) }]
-      : [],
-  );
+  const repeating = items.flatMap((item) => {
+    const nextDue = nextDueOf(item);
+    return nextDue ? [{ nextDue, end: snoozeEnd(item, opts) }] : [];
+  });
 
   // Collect all candidate fire dates from all qualifying items
   const candidateDates: Date[] = [];

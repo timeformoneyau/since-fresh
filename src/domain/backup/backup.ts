@@ -18,7 +18,12 @@
  *   - Entries already on the phone are left as they are.
  *   - An item is "already on the phone" if it has the same id, or shares a
  *     history entry with one (an item restored before keeps its entries' ids
- *     under its new id), so restoring the same file twice adds nothing.
+ *     under its new id), so restoring the same file twice adds nothing. A
+ *     date item not done yet has no entries, so it's matched by its name and
+ *     when it was added (createdAt, kept on restore) instead.
+ *   - Date items ("until it's due") keep their dueDate. The file format is
+ *     unchanged apart from that optional field, so older builds still read
+ *     it (they ignore the field) and it stays version 1.
  */
 
 import type { SinceItem, CompletionEvent } from '../../types';
@@ -101,13 +106,16 @@ export function planRestore(
   // An item restored before took a new id but kept its entries' ids, so an
   // entry id also identifies it: the same file never adds it twice.
   const byEntry = new Map(local.flatMap((i) => i.history.map((e) => [e.id, i] as const)));
+  const sameStart = (a: SinceItem, b: SinceItem) =>
+    a.history.length === 0 && b.history.length === 0 && a.name === b.name && a.createdAt === b.createdAt;
   const added: SinceItem[] = [];
   const extended: RestorePlan['extended'] = [];
 
   for (const incoming of backup) {
     const existing =
       mine.get(incoming.id) ??
-      incoming.history.map((e) => byEntry.get(e.id)).find((i): i is SinceItem => i !== undefined);
+      incoming.history.map((e) => byEntry.get(e.id)).find((i): i is SinceItem => i !== undefined) ??
+      [...local, ...added].find((i) => sameStart(i, incoming));
     if (!existing) {
       // Added as this account's own and just for me: the backup's owner,
       // household and who looked after it may not be this account's

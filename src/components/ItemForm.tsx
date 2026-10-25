@@ -13,7 +13,8 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { RepeatUnit, DEFAULT_CATEGORIES } from '../types';
 import { todayString, formatDisplay, formatStorage, parseDate, getNextDueDate } from '../utils/dateUtils';
-import { getSuggestion } from '../utils/suggestions';
+import { getSuggestion, suggestsUntil } from '../utils/suggestions';
+import { DUE_QUICK_PICKS, quickPickDate } from '../domain/items/due';
 import { intervalText } from '../domain/items/display';
 import { palette, colours, fonts, type, radius, space, cardShadow, TAP } from '../theme/tokens';
 import DatePickerModal from './DatePickerModal';
@@ -35,7 +36,30 @@ export interface ItemFormValues {
   shared?: boolean;
   /** Who looks after it (shared items only); null is Anyone. */
   lookedAfterBy?: string | null;
+  /**
+   * "Until it's due": the date it's due, or null while none is chosen. Absent
+   * for "Since I last did it". On that path lastDoneDate is sent back as given.
+   */
+  dueDate?: string | null;
 }
+
+/** "How do you want to track it?" */
+export const TRACK_COPY = {
+  question: 'How do you want to track it?',
+  since: 'Since I last did it',
+  sinceCaption: "Know how long it's been",
+  until: "Until it's due",
+  untilCaption: 'Remind me before a date',
+  dueQuestion: 'When is it due?',
+  dueHelp: "Use the cancel-by date, not the end date, if you're tracking a trial or subscription.",
+  chooseDate: 'Choose a date',
+  needsDate: 'Choose when it is due to save',
+  repeatQuestion: 'Repeat after that?',
+  onceOffInfo:
+    'Once-off things stay in your list as a record, with no reminders. You can switch to repeating whenever you like, and the history comes with it.',
+  untilOnceInfo:
+    "We'll remind you before it's due. When you mark it done, it stays in your list as a record.",
+} as const;
 
 interface Props {
   /** testID prefix: 'add' or 'edit'. */
@@ -55,6 +79,11 @@ interface Props {
   householdName?: string;
   /** Offer "Who looks after this?" while the item is shared: the choices, and who "You" is. */
   lookAfter?: { choices: LookAfterChoice[]; me: string | null };
+  /**
+   * Edit: how it's tracked can't change (v1), so it's shown as a label, not
+   * a choice. Add: the choice, preselected from the name until touched.
+   */
+  trackLocked?: boolean;
 }
 
 function yesterdayString(): string {
@@ -76,6 +105,7 @@ export default function ItemForm({
   footer,
   householdName,
   lookAfter,
+  trackLocked,
 }: Props) {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -92,6 +122,16 @@ export default function ItemForm({
   const [intervalTouched, setIntervalTouched] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showNameHint, setShowNameHint] = useState(false);
+  // "Until it's due" (date items)
+  const [until, setUntil] = useState(initial.dueDate !== undefined);
+  const [trackTouched, setTrackTouched] = useState(initial.dueDate !== undefined);
+  const [dueDate, setDueDate] = useState<string | null>(initial.dueDate ?? null);
+  const [repeatAfter, setRepeatAfter] = useState(initial.dueDate !== undefined && initial.repeatValue !== null);
+  const [untilValue, setUntilValue] = useState(initial.dueDate !== undefined ? initial.repeatValue ?? 1 : 1);
+  const [untilUnit, setUntilUnit] = useState<RepeatUnit>(
+    initial.dueDate !== undefined ? initial.repeatUnit ?? 'years' : 'years',
+  );
+  const [showDuePicker, setShowDuePicker] = useState(false);
 
   useEffect(() => {
     if (!autoFocusName) return;
@@ -108,7 +148,13 @@ export default function ItemForm({
     }
   }, [suggestion?.repeatValue, suggestion?.repeatUnit, intervalTouched]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canSave = name.trim().length > 0;
+  // Names like "Car rego" start on "Until it's due" until the choice is made
+  const untilSuggested = suggestFromName && !trackLocked ? suggestsUntil(name) : false;
+  useEffect(() => {
+    if (!trackTouched && !trackLocked) setUntil(untilSuggested);
+  }, [untilSuggested, trackTouched, trackLocked]);
+
+  const canSave = name.trim().length > 0 && (!until || dueDate !== null);
   // Only someone who can change sharing sees "Who is this for?"; for anyone
   // else the item stays as it is
   const showLookAfter = !!lookAfter && (householdName !== undefined ? shared : !!initial.shared);
@@ -122,18 +168,26 @@ export default function ItemForm({
     setRepeatValue((v) => Math.min(MAX_REPEAT, Math.max(MIN_REPEAT, v + by)));
   }
 
+  function chooseTrack(next: boolean) {
+    setTrackTouched(true);
+    setUntil(next);
+  }
+
   function handleSubmit() {
     const trimmed = name.trim();
-    if (!trimmed) {
+    if (!trimmed || (until && dueDate === null)) {
       setShowNameHint(true);
       return;
     }
+    const repeat = until
+      ? { repeatValue: repeatAfter ? untilValue : null, repeatUnit: repeatAfter ? untilUnit : null }
+      : { repeatValue: repeats ? repeatValue : null, repeatUnit: repeats ? repeatUnit : null };
     onSubmit({
       name: trimmed,
       category,
       lastDoneDate,
-      repeatValue: repeats ? repeatValue : null,
-      repeatUnit: repeats ? repeatUnit : null,
+      ...repeat,
+      ...(until ? { dueDate } : {}),
       ...(householdName !== undefined ? { shared } : {}),
       ...(showLookAfter ? { lookedAfterBy } : {}),
     });
@@ -170,6 +224,39 @@ export default function ItemForm({
             accessibilityLabel="Name"
           />
         </View>
+
+        {/* How do you want to track it? (a label on Edit: it can't change there) */}
+        {trackLocked ? (
+          <View style={styles.card} testID={`${prefix}-track-label`}>
+            <Text style={styles.heading}>{TRACK_COPY.question}</Text>
+            <Text style={styles.optionTitle}>{until ? TRACK_COPY.until : TRACK_COPY.since}</Text>
+            <Text style={type.secondary}>{until ? TRACK_COPY.untilCaption : TRACK_COPY.sinceCaption}</Text>
+          </View>
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.heading}>{TRACK_COPY.question}</Text>
+            <View style={styles.options} accessibilityRole="radiogroup">
+              <Option
+                testID={`${prefix}-track-since`}
+                selected={!until}
+                onPress={() => chooseTrack(false)}
+                icon="history"
+                tileBg={palette.infoBg}
+                title={TRACK_COPY.since}
+                caption={TRACK_COPY.sinceCaption}
+              />
+              <Option
+                testID={`${prefix}-track-until`}
+                selected={until}
+                onPress={() => chooseTrack(true)}
+                icon="calendar-clock"
+                tileBg={palette.amberBg}
+                title={TRACK_COPY.until}
+                caption={TRACK_COPY.untilCaption}
+              />
+            </View>
+          </View>
+        )}
 
         {/* Who is this for? (households) */}
         {householdName !== undefined && (
@@ -212,6 +299,21 @@ export default function ItemForm({
           </View>
         )}
 
+        {until ? (
+          <UntilPath
+            prefix={prefix}
+            dueDate={dueDate}
+            onPickDate={() => setShowDuePicker(true)}
+            onDueDate={setDueDate}
+            repeatAfter={repeatAfter}
+            onRepeatAfter={setRepeatAfter}
+            value={untilValue}
+            unit={untilUnit}
+            onValue={(by) => setUntilValue((v) => Math.min(MAX_REPEAT, Math.max(MIN_REPEAT, v + by)))}
+            onUnit={setUntilUnit}
+          />
+        ) : (
+        <>
         {/* 2. Does it repeat? */}
         <View style={styles.card}>
           <Text style={styles.heading}>Does it repeat?</Text>
@@ -294,10 +396,7 @@ export default function ItemForm({
           </View>
         ) : (
           <View style={styles.infoCard} testID={`${prefix}-onceoff-info`}>
-            <Text style={styles.infoText}>
-              Once-off things stay in your list as a record, with no reminders. You can switch to
-              repeating whenever you like, and the history comes with it.
-            </Text>
+            <Text style={styles.infoText}>{TRACK_COPY.onceOffInfo}</Text>
           </View>
         )}
 
@@ -335,6 +434,8 @@ export default function ItemForm({
           </View>
           <Text style={[type.secondary, styles.help]}>{dateHelp}</Text>
         </View>
+        </>
+        )}
 
         {/* 5. Category */}
         <View style={styles.card}>
@@ -373,7 +474,9 @@ export default function ItemForm({
           <Text style={styles.primaryBtnText}>{submitLabel}</Text>
         </TouchableOpacity>
         {showNameHint && !canSave && (
-          <Text style={styles.saveHint} testID={`${prefix}-save-hint`}>Add a name to save</Text>
+          <Text style={styles.saveHint} testID={`${prefix}-save-hint`}>
+            {name.trim().length === 0 ? 'Add a name to save' : TRACK_COPY.needsDate}
+          </Text>
         )}
         {footer}
       </ScrollView>
@@ -385,11 +488,148 @@ export default function ItemForm({
           onCancel={() => setShowDatePicker(false)}
         />
       )}
+      {showDuePicker && (
+        <DatePickerModal
+          value={dueDate ?? todayString()}
+          title="Due"
+          futureYears={10}
+          onConfirm={(d) => { setDueDate(d); setShowDuePicker(false); }}
+          onCancel={() => setShowDuePicker(false)}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+/** "Until it's due": when, quick picks, and whether it repeats after that. */
+function UntilPath(props: {
+  prefix: 'add' | 'edit';
+  dueDate: string | null;
+  onPickDate: () => void;
+  onDueDate: (date: string) => void;
+  repeatAfter: boolean;
+  onRepeatAfter: (repeat: boolean) => void;
+  value: number;
+  unit: RepeatUnit;
+  onValue: (by: number) => void;
+  onUnit: (unit: RepeatUnit) => void;
+}) {
+  const { prefix, dueDate } = props;
+  const today = todayString();
+  const shown = dueDate ? formatDisplay(parseDate(dueDate)) : null;
+  return (
+    <>
+      <View style={styles.card}>
+        <Text style={styles.heading}>{TRACK_COPY.dueQuestion}</Text>
+        <TouchableOpacity
+          style={styles.input}
+          testID={`${prefix}-due-date-button`}
+          onPress={props.onPickDate}
+          accessibilityRole="button"
+          accessibilityLabel={shown ? `Due ${shown}. Change` : `${TRACK_COPY.chooseDate}, when it's due`}
+        >
+          <Text style={[type.body, !shown && { color: palette.muted }]}>{shown ?? TRACK_COPY.chooseDate}</Text>
+        </TouchableOpacity>
+        <View style={styles.chipWrap}>
+          {DUE_QUICK_PICKS.map((q) => {
+            const date = quickPickDate(q.value, q.unit, today);
+            const selected = dueDate === date;
+            return (
+              <TouchableOpacity
+                key={q.id}
+                style={[styles.chip, selected && styles.selectedFill, styles.pickChip]}
+                onPress={() => props.onDueDate(date)}
+                testID={`${prefix}-due-in-${q.id}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`${q.label}, ${formatDisplay(parseDate(date))}`}
+              >
+                <Text style={[styles.chipText, selected && styles.selectedText]}>{q.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <Text style={[type.secondary, styles.help]}>{TRACK_COPY.dueHelp}</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.heading}>{TRACK_COPY.repeatQuestion}</Text>
+        <View style={styles.quickRow} accessibilityRole="radiogroup">
+          {[
+            { id: 'no', label: 'No', repeat: false },
+            { id: 'yes', label: 'Yes', repeat: true },
+          ].map((o) => {
+            const selected = props.repeatAfter === o.repeat;
+            return (
+              <TouchableOpacity
+                key={o.id}
+                style={[styles.chip, styles.yesNo, selected && styles.selectedFill]}
+                onPress={() => props.onRepeatAfter(o.repeat)}
+                testID={`${prefix}-repeat-after-${o.id}`}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selected }}
+                accessibilityLabel={`Repeat after that: ${o.label}`}
+              >
+                <Text style={[styles.chipText, selected && styles.selectedText]}>{o.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {props.repeatAfter && (
+          <RepeatEvery prefix={prefix} value={props.value} unit={props.unit} onStep={props.onValue} onUnit={props.onUnit} />
+        )}
+      </View>
+
+      {!props.repeatAfter && (
+        <View style={styles.infoCard} testID={`${prefix}-until-once-info`}>
+          <Text style={styles.infoText}>{TRACK_COPY.untilOnceInfo}</Text>
+        </View>
+      )}
+    </>
+  );
+}
+
+/** The "every N units" stepper on the Until path. */
+function RepeatEvery(props: {
+  prefix: 'add' | 'edit';
+  value: number;
+  unit: RepeatUnit;
+  onStep: (by: number) => void;
+  onUnit: (unit: RepeatUnit) => void;
+}) {
+  const { prefix, value, unit } = props;
+  return (
+    <View style={styles.repeatEvery}>
+      <Text style={styles.subheading}>Repeat every</Text>
+      <View style={styles.stepper}>
+        <StepButton testID={`${prefix}-stepper-minus`} icon="minus" label="Fewer" disabled={value <= MIN_REPEAT} onPress={() => props.onStep(-1)} />
+        <Text style={styles.stepValue} testID={`${prefix}-repeat-value`} accessibilityLabel={`Every ${intervalText(value, unit)}`}>
+          {value}
+        </Text>
+        <StepButton testID={`${prefix}-stepper-plus`} icon="plus" label="More" disabled={value >= MAX_REPEAT} onPress={() => props.onStep(1)} />
+      </View>
+      <View style={styles.unitRow}>
+        {REPEAT_UNITS.map((u) => {
+          const selected = unit === u;
+          return (
+            <TouchableOpacity
+              key={u}
+              style={[styles.unitBtn, selected && styles.selectedFill]}
+              onPress={() => props.onUnit(u)}
+              testID={`${prefix}-unit-${u}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+            >
+              <Text style={[styles.unitText, selected && styles.selectedText]}>{u}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 function Option(props: {
   testID: string;
@@ -513,6 +753,10 @@ const styles = StyleSheet.create({
   infoText: { fontFamily: fonts.regular, fontSize: 14.5, lineHeight: 21, color: palette.infoText },
 
   quickRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  pickChip: { marginTop: 10 },
+  yesNo: { minWidth: 72, alignItems: 'center' },
+  repeatEvery: { marginTop: 16 },
+  subheading: { fontFamily: fonts.bold, fontSize: 16.5, color: palette.ink, marginBottom: 10 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     minHeight: TAP,

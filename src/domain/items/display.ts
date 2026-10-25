@@ -87,17 +87,47 @@ export function dueCaption(daysUntilDue: number, value: number, unit: Unit): str
 
 /**
  * Caption for a history entry. gapFromPrevious is the days since the entry
- * before it, or null for the first ever entry.
+ * before it, or null for the first ever entry. On a date item the first
+ * entry is the first time it was done, not when tracking started.
  */
-export function entryCaption(gapFromPrevious: number | null): string {
-  if (gapFromPrevious === null) return 'First time · when you started tracking';
+export function entryCaption(gapFromPrevious: number | null, dated = false): string {
+  if (gapFromPrevious === null) return dated ? 'First time done' : 'First time · when you started tracking';
   if (gapFromPrevious === 0) return 'Done again · same day as the last';
   if (gapFromPrevious === 1) return 'Done again · 1 day after the last';
   return `Done again · ${gapFromPrevious} days after the last`;
 }
 
-/** "4 entries · about every 32 days", or "1 entry". */
+/** "4 entries · about every 32 days", "1 entry", or "No entries yet". */
 export function historySummary(count: number, usualDays: number | null): string {
+  if (count === 0) return 'No entries yet';
   const entries = count === 1 ? '1 entry' : `${count} entries`;
   return usualDays === null ? entries : `${entries} · about every ${usualDays} days`;
+}
+
+/** Under a starter on the empty list: "Every 12 months", or how a date starter works. */
+export function starterCaption(s: { repeatValue: number; repeatUnit: Unit; until?: { repeat: boolean } }): string {
+  if (s.until) return s.until.repeat ? 'Every year, from its due date' : 'Once, by its due date';
+  return `Every ${intervalText(s.repeatValue, s.repeatUnit)}`;
+}
+
+// ─── Until it's due (date items, due.ts) ─────────────────────────────────────
+
+/** "Last done" on a date item that hasn't been done yet. */
+export const NOT_YET = 'Not yet';
+
+/** Under the history of a date item not done yet. */
+export const EMPTY_HISTORY = 'Nothing here yet. When you mark it done, it shows up here.';
+
+/** A date item's status line: "Due in 40 days", "Due today", "Overdue by 3 days". */
+export function dueLine(daysUntilDue: number): string {
+  if (daysUntilDue > 1) return `Due in ${daysUntilDue} days`;
+  if (daysUntilDue === 1) return 'Due tomorrow';
+  if (daysUntilDue === 0) return 'Due today';
+  if (daysUntilDue === -1) return 'Overdue by 1 day';
+  return `Overdue by ${-daysUntilDue} days`;
+}
+
+/** Subtitle on the item screen: "Until it's due", or "Until it's due · Repeats every year". */
+export function untilText(value: number | null, unit: Unit | null): string {
+  return value === null || unit === null ? "Until it's due" : `Until it's due · ${repeatText(value, unit)}`;
 }

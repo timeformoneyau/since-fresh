@@ -8,6 +8,13 @@ appId: com.since.app
 - inputText: ${NAME}
 # Not a keyboard test (Save with the keyboard open has its own flow)
 - hideKeyboard
+# Some names (e.g. Passport) start on "Until it's due"; this adds a once-off record
+- tapOn:
+    id: "add-track-since"
+# Below "How do you want to track it?"
+- scrollUntilVisible:
+    element:
+      id: "add-onceoff-option"
 - tapOn:
     id: "add-onceoff-option"
 - scrollUntilVisible:

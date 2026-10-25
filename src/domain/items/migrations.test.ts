@@ -466,3 +466,70 @@ describe('Play hardening B: nothing saved before changes shape', () => {
     assert.deepEqual(readPrefs(null), {});
   });
 });
+
+describe("Until it's due: date items (dueDate)", () => {
+  const rego = {
+    ...base,
+    id: 'rego',
+    name: 'Car rego',
+    category: 'Auto',
+    // Not done yet: no history, and lastDoneDate is the day it was added
+    lastDoneDate: '2026-10-25',
+    history: [],
+    repeatValue: 1,
+    repeatUnit: 'years' as const,
+    dueDate: '2026-12-05',
+  };
+
+  test('a date item not done yet loads unchanged: its history stays empty', () => {
+    assert.deepEqual(parseAndMigrate(toEnvelope([rego])), [rego]);
+  });
+
+  test('a date item that has been done loads unchanged', () => {
+    const done = { ...rego, lastDoneDate: '2026-12-01', history: [{ id: 'e1', date: '2026-12-01' }], dueDate: '2027-12-05' };
+    assert.deepEqual(parseAndMigrate(toEnvelope([done])), [done]);
+  });
+
+  test('a one-off date item done (dueDate null) loads as a once-off record', () => {
+    const trial = { ...rego, id: 'trial', repeatValue: null, repeatUnit: null, history: [{ id: 't1', date: '2026-11-01' }], lastDoneDate: '2026-11-01', dueDate: null };
+    assert.deepEqual(parseAndMigrate(toEnvelope([trial])), [trial]);
+  });
+
+  test('items saved by the current release, with no dueDate, load exactly as before', () => {
+    const dentist = { ...base, id: 'd', name: 'Dentist', category: 'Health', lastDoneDate: '2026-09-01', history: [{ id: 'e', date: '2026-09-01' }], repeatValue: 6, repeatUnit: 'months' as const };
+    const [loaded] = parseAndMigrate(toEnvelope([dentist]));
+    assert.deepEqual(loaded, dentist);
+    assert.ok(!('dueDate' in loaded));
+  });
+
+  test("an unreadable dueDate can't be used: the item still loads, as a \"since\" item", () => {
+    const [loaded] = parseAndMigrate(toEnvelope([{ ...rego, dueDate: '5 Dec' }]));
+    assert.equal(loaded.name, 'Car rego');
+    assert.ok(!('dueDate' in loaded));
+    assert.deepEqual(loaded.history, [{ id: 'rego_last_2026-10-25', date: '2026-10-25' }]);
+  });
+
+  test('what this build writes still has a lastDoneDate string, so older builds keep the item', () => {
+    // Older builds drop any stored item whose lastDoneDate isn't a string
+    const stored = JSON.parse(toEnvelope(parseAndMigrate(toEnvelope([rego])))).items[0];
+    assert.equal(typeof stored.lastDoneDate, 'string');
+    assert.ok(Array.isArray(stored.history));
+    for (const field of ['id', 'name', 'category', 'createdAt', 'updatedAt']) assert.equal(typeof stored[field], 'string');
+  });
+
+  test('sync: the cloud copy of a date item brings its due date, and an empty history stays empty', () => {
+    const local = { ...rego, history: [] };
+    const merged = mergeItems([local], [{ ...rego, dueDate: '2027-12-05', serverUpdatedAt: '2026-12-01T00:00:00Z' }], new Set());
+    assert.equal(merged[0].dueDate, '2027-12-05');
+    assert.deepEqual(merged[0].history, []);
+  });
+
+  test("a snooze saved before date items (no dueDate) still loads and still applies", () => {
+    const item = { ...base, id: 'g', name: 'Gutters', category: 'Household', lastDoneDate: '2026-01-01', history: [{ id: 'e', date: '2026-01-01' }], repeatValue: 6, repeatUnit: 'months' as const };
+    const old = JSON.stringify({ version: 1, snoozes: { g: { until: '2026-11-01', lastDoneDate: '2026-01-01', repeatValue: 6, repeatUnit: 'months' } } });
+    const parsed = parseSnoozes(old);
+    assert.equal(parsed.g.until, '2026-11-01');
+    const now = new Date(2026, 9, 25);
+    assert.deepEqual(parseSnoozes(serializeSnoozes({ g: makeSnooze(item, '1-week', now) })).g.lastDoneDate, '2026-01-01');
+  });
+});

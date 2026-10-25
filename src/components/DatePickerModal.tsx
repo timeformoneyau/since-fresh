@@ -19,6 +19,10 @@ interface Props {
   value: string; // YYYY-MM-DD
   onConfirm: (dateStr: string) => void;
   onCancel: () => void;
+  /** Shown at the top. Defaults to "Last done". */
+  title?: string;
+  /** Years after this one to offer (a due date). Defaults to none. */
+  futureYears?: number;
 }
 
 const MONTHS = [
@@ -79,14 +83,17 @@ function WheelPicker({
   );
 }
 
-export default function DatePickerModal({ value, onConfirm, onCancel }: Props) {
+export default function DatePickerModal({ value, onConfirm, onCancel, title = 'Last done', futureYears = 0 }: Props) {
   const initial = parseDate(value);
   const [year, setYear] = useState(initial.getFullYear());
   const [month, setMonth] = useState(initial.getMonth()); // 0-indexed
   const [day, setDay] = useState(initial.getDate()); // 1-indexed
 
   const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 6 }, (_, i) => String(currentYear - 5 + i));
+  // Always includes the year of the date shown
+  const firstYear = Math.min(currentYear - 5, initial.getFullYear());
+  const lastYear = Math.max(currentYear + futureYears, initial.getFullYear());
+  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, i) => String(firstYear + i));
   const months = MONTHS;
   const numDays = daysInMonth(year, month);
   const clampedDay = Math.min(day, numDays);
@@ -105,7 +112,7 @@ export default function DatePickerModal({ value, onConfirm, onCancel }: Props) {
           <TouchableOpacity onPress={onCancel}>
             <Text style={styles.toolbarCancel}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={styles.toolbarTitle}>Last done</Text>
+          <Text style={styles.toolbarTitle}>{title}</Text>
           <TouchableOpacity onPress={handleConfirm} testID="date-picker-done">
             <Text style={styles.toolbarDone}>Done</Text>
           </TouchableOpacity>
@@ -129,7 +136,7 @@ export default function DatePickerModal({ value, onConfirm, onCancel }: Props) {
             items={years}
             testIDPrefix="date-year"
             selectedIndex={years.indexOf(String(year))}
-            onSelect={(i) => setYear(currentYear - 5 + i)}
+            onSelect={(i) => setYear(firstYear + i)}
           />
         </View>
       </View>

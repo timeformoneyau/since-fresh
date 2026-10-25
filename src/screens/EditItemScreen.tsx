@@ -47,6 +47,7 @@ export default function EditItemScreen() {
         repeatUnit: derived.repeatUnit,
         shared: !!derived.householdId,
         lookedAfterBy: lookedAfterBy(derived),
+        ...(typeof derived.dueDate === 'string' ? { dueDate: derived.dueDate } : {}),
       });
     })();
   }, [itemId, navigation]);
@@ -55,12 +56,14 @@ export default function EditItemScreen() {
   // Any member, on a shared item; its creator also while making it shared
   const offerLookAfter = !!item && (canChooseWhoLooksAfter(item, household) || sharing !== null);
 
-  async function handleSave({ shared, ...values }: ItemFormValues) {
+  async function handleSave({ shared, dueDate, ...values }: ItemFormValues) {
     try {
       // Switching between Repeats and Once off keeps the history; a new date
-      // edits the latest entry (service.ts, updateItem)
+      // edits the latest entry (service.ts, updateItem). A date item's due
+      // date can change; how it's tracked can't (v1)
       await updateItem(itemId, {
         ...values,
+        ...(dueDate ? { dueDate } : {}),
         ...(sharing && shared !== undefined ? { householdId: shared ? sharing.id : null } : {}),
       });
     } catch (e) {
@@ -72,7 +75,7 @@ export default function EditItemScreen() {
       throw e;
     }
     // Made repeating, before reminders were ever explained
-    if (await needsReminderExplanation(values.repeatValue !== null).catch(() => false)) {
+    if (await needsReminderExplanation(values.repeatValue !== null || !!dueDate).catch(() => false)) {
       navigation.replace('RemindersPermission');
       return;
     }
@@ -107,6 +110,7 @@ export default function EditItemScreen() {
       submitLabel="Save changes"
       dateHelp="This is your latest entry. Older ones are on the item screen."
       onSubmit={handleSave}
+      trackLocked
       householdName={sharing?.name}
       lookAfter={offerLookAfter ? { choices: lookAfterChoices(household), me: household.userId } : undefined}
       footer={item && !canDelete(item, household) ? undefined : (

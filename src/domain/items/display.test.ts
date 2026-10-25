@@ -99,3 +99,31 @@ describe('item screen wording', () => {
     assert.equal(historySummary(1, null), '1 entry');
   });
 });
+
+describe("Until it's due: wording for date items", () => {
+  test('the status line', async () => {
+    const { dueLine } = await import('./display.ts');
+    assert.equal(dueLine(40), 'Due in 40 days');
+    assert.equal(dueLine(1), 'Due tomorrow');
+    assert.equal(dueLine(0), 'Due today');
+    assert.equal(dueLine(-1), 'Overdue by 1 day');
+    assert.equal(dueLine(-12), 'Overdue by 12 days');
+  });
+
+  test('the item screen subtitle, empty history and first entry', async () => {
+    const { untilText, historySummary: summary, entryCaption: caption, starterCaption } = await import('./display.ts');
+    assert.equal(untilText(null, null), "Until it's due");
+    assert.equal(untilText(1, 'years'), "Until it's due · Repeats every year");
+    assert.equal(summary(0, null), 'No entries yet');
+    assert.equal(caption(null, true), 'First time done');
+    assert.equal(caption(null), 'First time · when you started tracking');
+    assert.equal(starterCaption({ repeatValue: 12, repeatUnit: 'months', until: { repeat: true } }), 'Every year, from its due date');
+    assert.equal(starterCaption({ repeatValue: 6, repeatUnit: 'months' }), 'Every 6 months');
+  });
+
+  test('none of it uses words Since avoids', async () => {
+    const d = await import('./display.ts');
+    const copy = [d.NOT_YET, d.EMPTY_HISTORY, d.untilText(1, 'years'), d.dueLine(-3), d.dueLine(5)].join(' ').toLowerCase();
+    for (const word of ['assigned', 'task', 'deadline', '!']) assert.ok(!copy.includes(word), word);
+  });
+});

@@ -7,13 +7,15 @@
  * - Personal and on this phone only: on a shared item it quiets this phone's
  *   reminders and nobody else's. It doesn't follow you to a second phone.
  * - A snooze holds only while the item is as it was when snoozed: marking it
- *   done (here or on another phone) or changing its repeat ends it, and a
+ *   done (here or on another phone), changing its repeat or its due date
+ *   (date items) ends it, and a
  *   deleted item takes its snooze with it (pruneSnoozes).
  */
 
 import { addDays, addMonths, addWeeks, differenceInCalendarDays, format, startOfDay } from 'date-fns';
 import type { RepeatUnit, SinceItem } from '../../types';
-import { getNextDueDate, parseDate } from '../../utils/dateUtils.ts';
+import { parseDate } from '../../utils/dateUtils.ts';
+import { nextDueOf } from '../items/due.ts';
 
 export type SnoozeOption = '3-days' | '1-week' | '1-month';
 
@@ -30,6 +32,11 @@ export interface Snooze {
   lastDoneDate: string;
   repeatValue: number | null;
   repeatUnit: RepeatUnit | null;
+  /**
+   * A date item's due date when snoozed; absent for other items, and in
+   * snoozes saved before date items. A change to it ends the snooze.
+   */
+  dueDate?: string;
 }
 
 /** By item id. */
@@ -40,9 +47,8 @@ export const SNOOZES_VERSION = 1;
 
 /** Due today or overdue: the only time "Not yet" is offered. */
 export function canSnooze(item: SinceItem, now: Date): boolean {
-  if (!item.repeatValue || !item.repeatUnit) return false;
-  const due = getNextDueDate(item.lastDoneDate, item.repeatValue, item.repeatUnit);
-  return differenceInCalendarDays(due, startOfDay(now)) <= 0;
+  const due = nextDueOf(item);
+  return due !== null && differenceInCalendarDays(due, startOfDay(now)) <= 0;
 }
 
 export function snoozeUntil(option: SnoozeOption, now: Date): string {
@@ -58,6 +64,7 @@ export function makeSnooze(item: SinceItem, option: SnoozeOption, now: Date): Sn
     lastDoneDate: item.lastDoneDate,
     repeatValue: item.repeatValue,
     repeatUnit: item.repeatUnit,
+    ...(typeof item.dueDate === 'string' ? { dueDate: item.dueDate } : {}),
   };
 }
 
@@ -65,7 +72,8 @@ function stillApplies(item: SinceItem, s: Snooze): boolean {
   return (
     s.lastDoneDate === item.lastDoneDate &&
     s.repeatValue === item.repeatValue &&
-    s.repeatUnit === item.repeatUnit
+    s.repeatUnit === item.repeatUnit &&
+    (s.dueDate ?? null) === (item.dueDate ?? null)
   );
 }
 
@@ -107,7 +115,8 @@ function isSnooze(s: unknown): s is Snooze {
     /^\d{4}-\d{2}-\d{2}$/.test(v.until) &&
     typeof v.lastDoneDate === 'string' &&
     (v.repeatValue === null || typeof v.repeatValue === 'number') &&
-    (v.repeatUnit === null || typeof v.repeatUnit === 'string')
+    (v.repeatUnit === null || typeof v.repeatUnit === 'string') &&
+    (v.dueDate === undefined || typeof v.dueDate === 'string')
   );
 }
 

@@ -9,7 +9,9 @@ import {
 } from 'react-native';
 import { SinceItem } from '../types';
 import { computeItemStatus, secondaryLine } from '../utils/statusUtils';
-import { intervalProgress, lastDoneText } from '../domain/items/display';
+import { intervalProgress, lastDoneText, dueLine } from '../domain/items/display';
+import { isDateItem } from '../domain/items/due';
+import { formatDisplay } from '../utils/dateUtils';
 import {
   colours,
   palette,
@@ -43,8 +45,11 @@ interface Props {
 export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress, snoozedUntil, lookedAfter }: Props) {
   const status = computeItemStatus(item);
   const snoozed = snoozeNote(snoozedUntil, new Date());
-  const { label, daysSince } = status;
-  const secondary = secondaryLine(status);
+  const { label, daysSince, daysUntilDue, nextDueDate } = status;
+  // A date item ("until it's due") shows its date and how far off it is
+  const dated = isDateItem(item) && nextDueDate !== null && daysUntilDue !== null;
+  const secondary = dated ? dueLine(daysUntilDue!) : secondaryLine(status);
+  const meta = dated ? `Due ${formatDisplay(nextDueDate!)}` : lastDoneText(daysSince);
 
   const translateX = useRef(new Animated.Value(0)).current;
   const SWIPE_THRESHOLD = 80;
@@ -132,7 +137,7 @@ export default function ItemCard({ item, onMarkDone, onEdit, onDelete, onPress, 
             <View style={styles.titleText}>
               <Text style={type.cardTitle}>{item.name}</Text>
               <View style={styles.metaRow}>
-                <Text style={type.secondary}>{lastDoneText(daysSince)}</Text>
+                <Text style={type.secondary} testID={`item-${item.name}-meta`}>{meta}</Text>
                 {isShared(item) && (
                   <Text style={styles.householdTag} testID={`item-${item.name}-household-tag`}>Household</Text>
                 )}

@@ -1,4 +1,5 @@
 import type { SinceItem, CompletionEvent } from '../../types';
+import { isDueDate } from './due.ts';
 
 /**
  * v1 — { version, items } envelope with expiryDate/source.
@@ -90,11 +91,23 @@ type LegacyItem = SinceItem & { expiryDate?: string | null; source?: string };
  *     and lastDoneDate is never rewritten; the added entry's id is fixed, so
  *     running this again changes nothing.
  *   - Entries may carry note and createdAt (redesign); they pass through.
+ *   - dueDate ("Until it's due") passes through. A date item not done yet
+ *     has no history, and nothing is added to it: lastDoneDate is then the
+ *     day it was added, not a completion. A dueDate that isn't a real
+ *     YYYY-MM-DD date can't be used, so the item loads without it, as a
+ *     "since" item, rather than being dropped.
  */
 function hydrate(stored: SinceItem): SinceItem {
-  const { expiryDate, source: _source, ...item } = stored as LegacyItem;
+  const { expiryDate, source: _source, ...rest } = stored as LegacyItem;
+  const { dueDate: storedDue, ...withoutDue } = rest;
+  const item: SinceItem =
+    storedDue === undefined ? rest : isDueDate(storedDue) || storedDue === null ? rest : withoutDue;
   const seed: CompletionEvent[] = [{ id: `${item.id}_seed`, date: item.lastDoneDate }];
   const history = Array.isArray(item.history) ? item.history : seed;
+
+  if (isDueDate(item.dueDate) && history.length === 0) {
+    return { ...item, history };
+  }
 
   if (expiryDate) {
     return {
