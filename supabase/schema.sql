@@ -7,7 +7,8 @@
 -- 003_history_table.sql adds completion_events, server_updated_at and kind;
 -- 004_households.sql adds shared households; 005_looked_after_by.sql adds who
 -- looks after a shared item; 006_play_hardening.sql adds invite rate limits,
--- size limits, and tighter account deletion and tombstones).
+-- size limits, and tighter account deletion and tombstones; 007_due_date.sql
+-- adds "until it's due").
 -- supabase/tests/ checks that both routes end in the same schema.
 --
 -- Mirrors the SinceItem model in src/types/index.ts. items.history holds the
@@ -1128,3 +1129,51 @@ begin
 end;
 $$;
 revoke all on function public.purge_soft_deleted_history(interval) from public, anon, authenticated;
+
+-- ════ "Until it's due" (migration 007) ═══════════════════════════════════════
+-- null is "since I last did it". Otherwise the next due date, YYYY-MM-DD; a
+-- value that isn't a real date is refused with SN008, which the app parks.
+
+alter table public.items
+  add column if not exists due_date text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.items'::regclass and conname = 'items_due_date_format'
+  ) then
+    alter table public.items
+      add constraint items_due_date_format
+        check (due_date is null or due_date ~ '^\d{4}-\d{2}-\d{2}$');
+  end if;
+end $$;
+
+create or replace function public.items_due_date_before_write()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  ok boolean;
+begin
+  if new.due_date is not null and (tg_op = 'INSERT' or new.due_date is distinct from old.due_date) then
+    begin
+      ok := new.due_date ~ '^\d{4}-\d{2}-\d{2}$'
+        and to_char(new.due_date::date, 'YYYY-MM-DD') = new.due_date;
+    exception when others then
+      ok := false;
+    end;
+    if not ok then
+      raise exception 'A due date must be a real date, written YYYY-MM-DD.'
+        using errcode = 'SN008', hint = 'since_item_due_date_invalid';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists items_due_date_before_write on public.items;
+create trigger items_due_date_before_write
+  before insert or update on public.items
+  for each row execute function public.items_due_date_before_write();

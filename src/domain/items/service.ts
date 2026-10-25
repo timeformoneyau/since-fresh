@@ -23,6 +23,7 @@ import type { ReminderTime } from '../../notifications/reminderTime';
 import { enqueueUpsert, enqueueDelete, enqueueEntryUpsert, enqueueEntryDelete, parkedMessages } from '../sync/queue';
 import { syncInBackground } from '../sync/engine';
 import { withoutCompletion, copyForRestore } from './undo';
+import { isDateItem, isDueDate } from './due';
 import {
   withHistory,
   hasEntryOn,
@@ -153,20 +154,29 @@ export async function clearSnooze(itemId: string): Promise<void> {
 /** Refused here, as the server would refuse it (005_looked_after_by.sql). */
 const LOOK_AFTER_REFUSED = 'Only someone in the household can look after a shared item.';
 
+/** Refused here, so a date the server would refuse never sits in the sync queue. */
+const DUE_DATE_REFUSED = 'Choose a due date.';
+const SWITCH_REFUSED = "An item can't switch between \"since\" and \"until\" yet.";
+
 /**
  * Create a new item, persist it, and schedule its notifications.
  *
- * Every item is seeded with an initial history entry, so the log starts
- * from the date the user says it was last done.
+ * A "since" item is seeded with an initial history entry, so the log starts
+ * from the date the user says it was last done. A date item ("until it's
+ * due") starts with no history: it hasn't been done yet, and lastDoneDate is
+ * today, the day it was added (due.ts).
  */
 export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
   const now = new Date().toISOString();
-  const history: CompletionEvent[] = [{ id: generateId(), date: input.lastDoneDate, createdAt: now }];
+  const dated = input.dueDate !== undefined && input.dueDate !== null;
+  if (dated && !isDueDate(input.dueDate)) throw new Error(DUE_DATE_REFUSED);
+  const lastDoneDate = dated ? todayString() : input.lastDoneDate;
+  const history: CompletionEvent[] = dated ? [] : [{ id: generateId(), date: lastDoneDate, createdAt: now }];
   const item: SinceItem = {
     id: generateId(),
     name: input.name,
     category: input.category,
-    lastDoneDate: input.lastDoneDate,
+    lastDoneDate,
     history,
     repeatValue: input.repeatValue,
     repeatUnit: input.repeatUnit,
@@ -174,6 +184,7 @@ export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
     updatedAt: now,
     ...(input.householdId ? { householdId: input.householdId } : {}),
     ...(input.householdId && input.lookedAfterBy ? { lookedAfterBy: input.lookedAfterBy } : {}),
+    ...(dated ? { dueDate: input.dueDate } : {}),
   };
   if (!canLookAfter(item, item.lookedAfterBy ?? null, await loadHouseholdState())) {
     throw new Error(LOOK_AFTER_REFUSED);
@@ -194,10 +205,18 @@ export async function createItem(input: CreateItemInput): Promise<DerivedItem> {
  *
  * A changed lastDoneDate edits the newest history entry (within the same
  * bounds as editing it on the item screen), since lastDoneDate always comes
- * from the history. Throws HistoryError when the date isn't allowed.
+ * from the history. Throws HistoryError when the date isn't allowed. A date
+ * item not done yet has no entry to edit, so its lastDoneDate stays put.
+ *
+ * A date item's due date can change; an item can't become, or stop being, a
+ * date item here (v1).
  */
 export async function updateItem(itemId: string, updates: UpdateItemInput): Promise<DerivedItem> {
   const { items, existing } = await loadOne(itemId);
+  if (updates.dueDate !== undefined) {
+    if (!isDateItem(existing)) throw new Error(SWITCH_REFUSED);
+    if (!isDueDate(updates.dueDate)) throw new Error(DUE_DATE_REFUSED);
+  }
   // The server refuses a sharing change from anyone but the item's creator
   // (004_households.sql); refused here so it never sits in the sync queue.
   if (
@@ -230,7 +249,7 @@ export async function updateItem(itemId: string, updates: UpdateItemInput): Prom
   ) {
     throw new Error(LOOK_AFTER_REFUSED);
   }
-  if (lastDoneDate !== undefined && lastDoneDate !== existing.lastDoneDate) {
+  if (lastDoneDate !== undefined && lastDoneDate !== existing.lastDoneDate && existing.history.length > 0) {
     const newest = sortNewestFirst(existing.history)[0];
     updated = updateEntry(updated, newest.id, { date: lastDoneDate }, todayString(), now);
     return persist(items, updated, { fields: true, entryChanged: newest.id });

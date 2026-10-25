@@ -8,6 +8,7 @@
  */
 
 import type { SinceItem, CompletionEvent } from '../../types';
+import { addedDay, isDateItem } from './due.ts';
 
 export type HistoryErrorCode = 'future' | 'out-of-range' | 'last-entry' | 'not-found';
 
@@ -31,14 +32,16 @@ export function sortNewestFirst(history: CompletionEvent[]): CompletionEvent[] {
 /**
  * The one place that sets lastDoneDate: history sorted newest first, and
  * lastDoneDate set to the latest entry's date. Every history change goes
- * through here.
+ * through here. A date item left with no entries goes back to "not done
+ * yet": lastDoneDate is the day it was added again (due.ts).
  */
 export function withHistory(item: SinceItem, history: CompletionEvent[], now: string): SinceItem {
   const sorted = sortNewestFirst(history);
+  const empty = isDateItem(item) ? addedDay(item) : item.lastDoneDate;
   return {
     ...item,
     history: sorted,
-    lastDoneDate: sorted.length > 0 ? sorted[0].date : item.lastDoneDate,
+    lastDoneDate: sorted.length > 0 ? sorted[0].date : empty,
     updatedAt: now,
   };
 }
@@ -114,12 +117,15 @@ export function updateEntry(
   );
 }
 
-/** Remove an entry. Every item keeps at least one. */
+/**
+ * Remove an entry. Every item keeps at least one, except a date item ("until
+ * it's due"), whose history may be empty.
+ */
 export function deleteEntry(item: SinceItem, entryId: string, now: string): SinceItem {
   if (!item.history.some((e) => e.id === entryId)) {
     throw new HistoryError('not-found', 'That entry no longer exists.');
   }
-  if (item.history.length <= 1) {
+  if (item.history.length <= 1 && !isDateItem(item)) {
     throw new HistoryError('last-entry', 'Every item needs at least one entry. Delete the item instead.');
   }
   return withHistory(item, item.history.filter((e) => e.id !== entryId), now);

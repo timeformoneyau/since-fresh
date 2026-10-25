@@ -109,3 +109,30 @@ describe('copyForRestore (undo delete)', () => {
     assert.equal(copy.updatedAt, NOW);
   });
 });
+
+describe("Until it's due: undoing Done on a date item", () => {
+  const rego = item({
+    id: 'rego', name: 'Car rego', repeatValue: 1, repeatUnit: 'years',
+    createdAt: new Date(2026, 9, 25, 9).toISOString(),
+    lastDoneDate: '2026-11-01', history: [{ id: 'd1', date: '2026-11-01' }], dueDate: '2027-12-05',
+  });
+
+  test('puts the due date back and leaves it not done yet', () => {
+    const undone = withoutCompletion(rego, 'd1', NOW, '2026-10-25', '2026-12-05')!;
+    assert.equal(undone.dueDate, '2026-12-05');
+    assert.deepEqual(undone.history, []);
+    assert.equal(undone.lastDoneDate, '2026-10-25');
+  });
+
+  test('a one-off that became a once-off record goes back to being a date item', () => {
+    const trial = { ...rego, repeatValue: null, repeatUnit: null, dueDate: null };
+    const undone = withoutCompletion(trial, 'd1', NOW, '2026-10-25', '2027-01-25')!;
+    assert.equal(undone.dueDate, '2027-01-25');
+    assert.deepEqual(undone.history, []);
+  });
+
+  test('a "since" item still never loses its only entry', () => {
+    assert.equal(withoutCompletion(item(), 'e0', NOW, undefined, null), null);
+    assert.ok(!('dueDate' in withoutCompletion(item({ history: [{ id: 'e1', date: '2026-03-01' }, { id: 'e0', date: '2026-01-10' }] }), 'e1', NOW, '2026-01-10', null)!));
+  });
+});

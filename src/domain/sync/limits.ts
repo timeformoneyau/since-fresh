@@ -15,6 +15,7 @@
  */
 
 import type { SinceItem } from '../../types';
+import { isDueDate } from '../items/due.ts';
 
 /** The same numbers as 006_play_hardening.sql. The screens stay well inside them. */
 export const LIMITS = {
@@ -33,6 +34,7 @@ export const REFUSAL = {
   noteTooLong: 'SN005',
   tooManyEntries: 'SN006',
   tooManyItems: 'SN007',
+  dueDateInvalid: 'SN008',
 } as const;
 
 /** The hint each code carries, for a server that reports the hint but not the code. */
@@ -44,6 +46,7 @@ const BY_HINT: Record<string, string> = {
   since_note_too_long: REFUSAL.noteTooLong,
   since_too_many_entries: REFUSAL.tooManyEntries,
   since_too_many_items: REFUSAL.tooManyItems,
+  since_item_due_date_invalid: REFUSAL.dueDateInvalid,
 };
 
 /**
@@ -71,6 +74,7 @@ export const PARKED_COPY: Record<string, string> = {
     'This item has too many history entries to sync. Delete some older ones and it will go through.',
   [REFUSAL.tooManyItems]:
     "Your account has reached 5,000 items, so this one can't sync yet. Delete some you no longer need and it will go through.",
+  [REFUSAL.dueDateInvalid]: "This item's due date can't be read. Choose it again and it will go through.",
 };
 
 const FALLBACK = "This item can't sync yet. Edit it and it will try again.";
@@ -104,6 +108,9 @@ export function noteProblem(note: string | undefined | null): string | null {
 export function itemProblem(item: SinceItem): string | null {
   if (chars(item.name) > LIMITS.name) return REFUSAL.nameTooLong;
   if (chars(item.category) > LIMITS.category) return REFUSAL.categoryTooLong;
+  if (item.dueDate !== undefined && item.dueDate !== null && !isDueDate(item.dueDate)) {
+    return REFUSAL.dueDateInvalid;
+  }
   const history = Array.isArray(item.history) ? item.history : [];
   if (history.length > LIMITS.historyEntries) return REFUSAL.historyTooManyEntries;
   if (history.some((e) => noteProblem(e?.note))) return REFUSAL.noteTooLong;
