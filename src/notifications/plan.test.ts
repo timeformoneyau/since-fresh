@@ -232,3 +232,55 @@ describe('who looks after a shared item', () => {
     assert.equal(after.length, 0);
   });
 });
+
+describe("Until it's due: date items", () => {
+  const dated = (id: string, dueDate: string, repeatValue: number | null = null, repeatUnit: SinceItem['repeatUnit'] = null): SinceItem => ({
+    ...item(id, '2026-10-21', repeatValue, repeatUnit), history: [], dueDate,
+  });
+
+  test('a one-off date item is reminded against its date, with at least a week\'s notice', () => {
+    // Added 21 Oct, due 5 Dec (45 days): a "since" item that long would get 3 days
+    const plan = planNotifications([dated('Trial', '2026-12-05')], { now: NOW });
+    assert.deepEqual(summary(plan).slice(0, 3), [
+      '2026-11-28 09:00 since_Trial_coming_up Trial due in 7 days',
+      '2026-12-05 09:00 since_Trial_due Trial due today',
+      '2026-12-12 09:00 since_Trial_overdue_7 Trial overdue by 7 days',
+    ]);
+  });
+
+  test('a yearly date item gets 30 days\' notice, like a yearly "since" item', () => {
+    const plan = planNotifications([dated('Rego', '2027-03-01', 1, 'years')], { now: NOW });
+    assert.equal(summary(plan)[0], '2027-01-30 09:00 since_Rego_coming_up Rego due in 30 days');
+  });
+
+  test('its last done date and repeat don\'t move the due date', () => {
+    const plan = planNotifications([{ ...dated('Rego', '2026-12-05', 1, 'years'), lastDoneDate: '2020-01-01' }], { now: NOW });
+    assert.ok(summary(plan).includes('2026-12-05 09:00 since_Rego_due Rego due today'));
+  });
+
+  test('once done (dueDate cleared, no repeat) it gets nothing', () => {
+    assert.deepEqual(planNotifications([{ ...dated('Trial', '2026-12-05'), dueDate: null }], { now: NOW }), []);
+  });
+
+  test('a past due date is overdue: grouped notices, and the daily cap holds', () => {
+    const items = ['A', 'B', 'C', 'D'].map((id) => dated(id, '2026-09-01'));
+    const plan = planNotifications(items, { now: NOW });
+    assert.ok(plan.some((n) => n.body === '4 things might need attention'));
+    for (const count of perDay(plan).values()) assert.ok(count <= MAX_PER_DAY);
+  });
+
+  test('a snooze quiets it, and changing its due date ends the snooze', () => {
+    const rego = dated('Rego', '2026-10-20', 1, 'years');
+    const snoozes = snoozed(rego, '1-week');
+    const quiet = planNotifications([rego], { now: NOW, snoozes });
+    assert.ok(quiet.some((n) => n.identifier === 'since_Rego_snooze_end'));
+    const moved = planNotifications([{ ...rego, dueDate: '2026-11-20' }], { now: NOW, snoozes });
+    assert.ok(!moved.some((n) => n.identifier === 'since_Rego_snooze_end'));
+  });
+
+  test('someone else looks after it: nothing on this phone', () => {
+    const shared = { ...dated('Rego', '2026-12-05', 1, 'years'), householdId: 'h', lookedAfterBy: 'sam' };
+    assert.deepEqual(planNotifications([shared], { now: NOW, me: 'alex' }), []);
+    assert.ok(planNotifications([shared], { now: NOW, me: 'sam' }).length > 0);
+  });
+});

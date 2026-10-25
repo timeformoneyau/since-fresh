@@ -23,7 +23,7 @@ import type { ReminderTime } from '../../notifications/reminderTime';
 import { enqueueUpsert, enqueueDelete, enqueueEntryUpsert, enqueueEntryDelete, parkedMessages } from '../sync/queue';
 import { syncInBackground } from '../sync/engine';
 import { withoutCompletion, copyForRestore } from './undo';
-import { isDateItem, isDueDate } from './due';
+import { isDateItem, isDueDate, dueDateAfterDone } from './due';
 import {
   withHistory,
   hasEntryOn,
@@ -271,6 +271,11 @@ export async function setLookedAfterBy(itemId: string, userId: string | null): P
  * Mark an item as done today (or on a specific date): adds a history entry.
  * Doing it twice on the same day changes nothing, and entryId is then null
  * (there's nothing to undo).
+ *
+ * A date item ("until it's due", due.ts) also moves its due date: on by the
+ * repeat from the previous due date, until it's after the day done, or, if
+ * it doesn't repeat, cleared, so it becomes a once-off record. That's a
+ * field change too, so the fields are queued for sync with the entry.
  */
 export async function markItemDone(
   itemId: string,
@@ -281,8 +286,10 @@ export async function markItemDone(
   if (hasEntryOn(existing, date)) return { item: deriveItem(existing), entryId: null };
 
   const entryId = generateId();
-  const updated = addEntry(existing, { id: entryId, date }, todayString(), new Date().toISOString());
-  return { item: await persist(items, updated, { entryChanged: entryId }), entryId };
+  let updated = addEntry(existing, { id: entryId, date }, todayString(), new Date().toISOString());
+  const dated = isDateItem(existing);
+  if (dated) updated = { ...updated, dueDate: dueDateAfterDone(existing, date) };
+  return { item: await persist(items, updated, { entryChanged: entryId, fields: dated }), entryId };
 }
 
 /** Add a past entry ("Did it on another day?"). Throws HistoryError for a future date. */
@@ -316,19 +323,22 @@ export async function deleteHistoryEntry(itemId: string, entryId: string): Promi
 
 /**
  * Undo a completion recorded by markItemDone (see undo.ts for the rules).
- * Returns the item unchanged when there is nothing to undo.
+ * Returns the item unchanged when there is nothing to undo. previousDueDate
+ * (the item's dueDate just before, null if none) puts a date item's due date
+ * back; that change is queued for sync with the entry's removal.
  */
 export async function undoMarkDone(
   itemId: string,
   eventId: string,
   previousLastDoneDate?: string,
+  previousDueDate?: string | null,
 ): Promise<DerivedItem> {
   const items = await loadItems();
   const existing = items.find((i) => i.id === itemId);
   if (!existing) throw new Error(`Item not found: ${itemId}`);
 
   const now = new Date().toISOString();
-  const undone = withoutCompletion(existing, eventId, now, previousLastDoneDate);
+  const undone = withoutCompletion(existing, eventId, now, previousLastDoneDate, previousDueDate);
   if (!undone) return deriveItem(existing);
   const updated = withHistory(undone, undone.history, now);
 
@@ -336,6 +346,7 @@ export async function undoMarkDone(
   await saveItems(next);
   await rescheduleAllNotifications(next);
 
+  if ((updated.dueDate ?? null) !== (existing.dueDate ?? null)) await enqueueUpsert(updated.id);
   await enqueueEntryDelete({ itemId: updated.id, entryId: eventId });
   syncInBackground();
   notifyItemsChanged();
