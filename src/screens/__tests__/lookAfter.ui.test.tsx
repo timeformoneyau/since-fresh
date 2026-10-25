@@ -110,12 +110,12 @@ it("Add: a person chosen and then switched back to Just me isn't saved", async (
   await inHousehold();
   render(<App />);
   fireEvent.press(await screen.findByTestId('empty-add-button', {}, FIRST));
-  fireEvent.changeText(await screen.findByTestId('add-name-input'), 'Passport');
+  fireEvent.changeText(await screen.findByTestId('add-name-input'), 'Haircut');
   fireEvent.press(screen.getByTestId('add-household-option'));
   fireEvent.press(screen.getByTestId('add-look-after-you'));
   fireEvent.press(screen.getByTestId('add-justme-option'));
   fireEvent.press(screen.getByTestId('add-save-button'));
-  await screen.findByTestId('item-Passport', {}, FIRST);
+  await screen.findByTestId('item-Haircut', {}, FIRST);
   const passport = (await getDerivedItems())[0];
   expect(passport.householdId ?? null).toBeNull();
   expect(passport.lookedAfterBy ?? null).toBeNull();
