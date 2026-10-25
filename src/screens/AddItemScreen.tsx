@@ -28,8 +28,10 @@ export default function AddItemScreen() {
         name: starter?.name ?? '',
         category: starter?.category ?? 'Other',
         lastDoneDate: todayString(),
-        repeatValue: usual?.repeatValue ?? 30,
-        repeatUnit: usual?.repeatUnit ?? 'days',
+        repeatValue: starter?.until ? (starter.until.repeat ? 1 : null) : usual?.repeatValue ?? 30,
+        repeatUnit: starter?.until ? (starter.until.repeat ? 'years' : null) : usual?.repeatUnit ?? 'days',
+        // A starter like car rego opens on "Until it's due", asking the date
+        ...(starter?.until ? { dueDate: null } : {}),
       }}
       submitLabel="Track this"
       dateHelp="This becomes the first entry in its history. You can add or edit past entries later."
@@ -40,8 +42,9 @@ export default function AddItemScreen() {
       onSubmit={async ({ shared, lookedAfterBy, ...values }) => {
         const householdId = shared && household ? household.id : null;
         await createItem({ ...values, householdId, lookedAfterBy: householdId ? lookedAfterBy ?? null : null });
-        // The first repeating item is when reminders start to matter
-        if (await needsReminderExplanation(values.repeatValue !== null).catch(() => false)) {
+        // The first item with reminders (repeating, or due on a date) is when they start to matter
+        const reminded = values.repeatValue !== null || !!values.dueDate;
+        if (await needsReminderExplanation(reminded).catch(() => false)) {
           navigation.replace('RemindersPermission');
           return;
         }

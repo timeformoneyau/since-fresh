@@ -24,7 +24,7 @@ import {
 } from '../domain/items/service';
 import { sortItems } from '../utils/statusUtils';
 import { STARTERS } from '../utils/suggestions';
-import { intervalText } from '../domain/items/display';
+import { starterCaption } from '../domain/items/display';
 import { isCloudSyncConfigured } from '../lib/supabase';
 import { syncNow } from '../domain/sync/engine';
 import ItemCard from '../components/ItemCard';
@@ -235,13 +235,15 @@ export default function MainListScreen() {
               key={s.name}
               style={styles.starterRow}
               testID={`starter-${s.name}`}
-              onPress={() => navigation.navigate('Add', { name: s.name, category: s.category })}
+              onPress={() =>
+                navigation.navigate('Add', { name: s.name, category: s.category, ...(s.until ? { until: s.until } : {}) })
+              }
               accessibilityRole="button"
-              accessibilityLabel={`Add ${s.name}, every ${intervalText(s.repeatValue, s.repeatUnit)}`}
+              accessibilityLabel={`Add ${s.name}, ${starterCaption(s).toLowerCase()}`}
             >
               <View style={styles.shrink}>
                 <Text style={styles.chipText}>{s.name}</Text>
-                <Text style={type.secondary}>Every {intervalText(s.repeatValue, s.repeatUnit)}</Text>
+                <Text style={type.secondary}>{starterCaption(s)}</Text>
               </View>
               <MaterialCommunityIcons name="plus" size={22} color={palette.ink} />
             </TouchableOpacity>

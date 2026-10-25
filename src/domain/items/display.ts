@@ -101,3 +101,9 @@ export function historySummary(count: number, usualDays: number | null): string 
   const entries = count === 1 ? '1 entry' : `${count} entries`;
   return usualDays === null ? entries : `${entries} · about every ${usualDays} days`;
 }
+
+/** Under a starter on the empty list: "Every 12 months", or how a date starter works. */
+export function starterCaption(s: { repeatValue: number; repeatUnit: Unit; until?: { repeat: boolean } }): string {
+  if (s.until) return s.until.repeat ? 'Every year, from its due date' : 'Once, by its due date';
+  return `Every ${intervalText(s.repeatValue, s.repeatUnit)}`;
+}
