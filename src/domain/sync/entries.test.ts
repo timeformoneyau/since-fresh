@@ -534,3 +534,58 @@ describe('server change times', () => {
     assert.equal(a.state.cursor?.items, late);
   });
 });
+
+describe("Until it's due: date items on two phones", () => {
+  const rego = (): SinceItem => ({
+    ...item('rego', []), name: 'Car rego', history: [], lastDoneDate: '2026-10-01',
+    repeatValue: 1, repeatUnit: 'years', dueDate: '2026-12-05',
+  });
+
+  async function both() {
+    const cloud = fakeCloud();
+    const a = phone(cloud);
+    a.create(rego());
+    assert.equal(await a.sync(), 'synced');
+    const b = phone(cloud);
+    assert.equal(await b.sync(), 'synced');
+    return { a, b };
+  }
+
+  test('a date item not done yet arrives with its due date and no entries', async () => {
+    const { b } = await both();
+    assert.equal(b.get('rego').dueDate, '2026-12-05');
+    assert.deepEqual(b.get('rego').history, []);
+  });
+
+  test('Done on one phone (an entry and a new due date) reaches the other', async () => {
+    const { a, b } = await both();
+    // As service.ts does it: the entry, and the due date as a field change
+    a.markDone('rego', 'done-1', '2026-10-15');
+    a.state.local = a.state.local.map((i) => (i.id === 'rego' ? { ...i, dueDate: '2027-12-05' } : i));
+    a.state.queue = withUpsert(a.state.queue, 'rego');
+    await a.sync();
+    await b.sync();
+    assert.equal(b.get('rego').dueDate, '2027-12-05');
+    assert.deepEqual(entryIds(b.get('rego')), ['done-1']);
+  });
+
+  test("its only entry deleted on one phone leaves it not done yet on the other", async () => {
+    const { a, b } = await both();
+    a.markDone('rego', 'done-1', '2026-10-15');
+    await a.sync();
+    await b.sync();
+    a.deleteEntry('rego', 'done-1');
+    await a.sync();
+    await b.sync();
+    assert.deepEqual(b.get('rego').history, []);
+    assert.equal(b.get('rego').lastDoneDate, '2026-10-01');
+  });
+
+  test('a "since" item still never loses its last entry to a cloud delete', () => {
+    const local = item('a', ['2026-10-01']);
+    const gone: CloudEntry = {
+      itemId: 'a', id: 'a-e0', date: '2026-10-01', note: null, createdAt: null, deletedAt: NOW, serverUpdatedAt: NOW,
+    };
+    assert.deepEqual(entryIds(mergeItems([local], [], new Set(), [gone])[0]), ['a-e0']);
+  });
+});

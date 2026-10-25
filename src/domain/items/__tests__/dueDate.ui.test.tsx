@@ -176,3 +176,32 @@ describe('Done on a date item', () => {
     expect((await loadQueue()).upserts).toEqual([]);
   });
 });
+
+describe('the cloud row (migration 007)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { itemToRow, rowToItem } = require('../cloudStorage');
+
+  it('a date item sends due_date and comes back with it', async () => {
+    const created = await rego(inDays(40));
+    const row = itemToRow(created, 'me');
+    expect(row.due_date).toBe(inDays(40));
+    expect(row.last_done_date).toBe(todayString());
+    const back = rowToItem({ ...row, server_updated_at: 'x' }, 'me');
+    expect(back.dueDate).toBe(inDays(40));
+    expect(back.history).toEqual([]);
+  });
+
+  it('a "since" item never sends due_date, so it works before 007 runs', async () => {
+    const since = await createItem({ name: 'Dentist', category: 'Health', lastDoneDate: '2026-09-01', repeatValue: 6, repeatUnit: 'months' });
+    expect('due_date' in itemToRow(since, 'me')).toBe(false);
+    // A row from a project without 007 has no due_date: no dueDate either
+    const { due_date: _none, ...older } = itemToRow(since, 'me');
+    expect('dueDate' in rowToItem(older, 'me')).toBe(false);
+  });
+
+  it('a one-off done (dueDate cleared) sends null, so the cloud clears it too', async () => {
+    const trial = await createItem({ name: 'Trial', category: 'Finance', lastDoneDate: todayString(), repeatValue: null, repeatUnit: null, dueDate: inDays(9) });
+    const { item } = await markItemDone(trial.id);
+    expect(itemToRow(item, 'me').due_date).toBeNull();
+  });
+});

@@ -168,3 +168,48 @@ describe('restoring merges, never replaces', () => {
     assert.equal(describeRestore(planRestore(local, [local[0]], newId, NOW)), null);
   });
 });
+
+describe("Until it's due: date items in a backup", () => {
+  const rego = (over: Partial<SinceItem> = {}): SinceItem => ({
+    id: 'rego', name: 'Car rego', category: 'Auto', lastDoneDate: '2026-10-25', history: [],
+    repeatValue: 1, repeatUnit: 'years', createdAt: '2026-10-25T01:00:00.000Z', updatedAt: '2026-10-25T01:00:00.000Z',
+    dueDate: '2026-12-05', ...over,
+  });
+
+  test('a date item not done yet round-trips, due date and empty history included', () => {
+    assert.deepEqual(readBackup(toBackup([rego()], NOW)), [rego()]);
+  });
+
+  test('the file is still version 1: only an optional field was added', () => {
+    assert.equal(JSON.parse(toBackup([rego()], NOW)).version, 1);
+  });
+
+  test('restoring adds it under a new id, keeping its due date', () => {
+    const plan = planRestore([], [rego()], newId, NOW);
+    assert.equal(plan.added.length, 1);
+    assert.equal(plan.added[0].dueDate, '2026-12-05');
+    assert.deepEqual(plan.added[0].history, []);
+    assert.notEqual(plan.added[0].id, 'rego');
+    assert.equal(describeRestore(plan), '1 item, 0 entries. Add to your list?');
+  });
+
+  test('restoring the same file twice adds it once, though it has no entries to match on', () => {
+    const first = planRestore([], [rego()], newId, NOW);
+    const second = planRestore(first.added, [rego()], newId, NOW);
+    assert.equal(second.itemCount, 0);
+    assert.equal(describeRestore(second), null);
+  });
+
+  test('a different date item with the same name is still added', () => {
+    const plan = planRestore([rego()], [rego({ id: 'boat', createdAt: '2026-10-26T01:00:00.000Z' })], newId, NOW);
+    assert.equal(plan.itemCount, 1);
+  });
+
+  test('an item here keeps its own due date; the backup only adds entries', () => {
+    const here = rego({ dueDate: '2027-12-05', lastDoneDate: '2026-11-01', history: [{ id: 'd1', date: '2026-11-01' }] });
+    const plan = planRestore([here], [rego({ history: [{ id: 'old', date: '2025-12-01' }], lastDoneDate: '2025-12-01' })], newId, NOW);
+    assert.equal(plan.extended.length, 1);
+    assert.equal(plan.extended[0].item.dueDate, '2027-12-05');
+    assert.deepEqual(plan.extended[0].entryIds, ['old']);
+  });
+});

@@ -12,7 +12,7 @@
  *     entries to the same item both keep them. An entry deleted on any phone
  *     (soft deleted in the cloud) is removed everywhere, except that an item
  *     never loses its last entry.
- *   - Item fields (name, category, repeat): a change still waiting to push
+ *   - Item fields (name, category, repeat, due date): a change still waiting to push
  *     from this phone wins; otherwise the cloud's latest copy does. The last
  *     phone to push a field's change wins it.
  *   - An item only in the cloud is adopted; an item only on this phone is
@@ -26,6 +26,7 @@
 
 import type { SinceItem, CompletionEvent } from '../../types';
 import { sortNewestFirst } from '../items/history.ts';
+import { addedDay, isDateItem } from '../items/due.ts';
 import type { SyncFailure } from './classify';
 import { itemProblem, noteProblem, refusalCode } from './limits.ts';
 
@@ -158,7 +159,10 @@ function fromCloud(e: CloudEntry): CompletionEvent {
   };
 }
 
-/** Apply cloud entry changes to one item's history. Never leaves it empty. */
+/**
+ * Apply cloud entry changes to one item's history. Never leaves it empty,
+ * except a date item's ("until it's due"), which may have no entries.
+ */
 function mergeHistory(
   item: SinceItem,
   changes: CloudEntry[],
@@ -174,7 +178,7 @@ function mergeHistory(
     const at = history.findIndex((e) => e.id === change.id);
 
     if (change.deletedAt) {
-      if (at !== -1 && history.length > 1) history.splice(at, 1);
+      if (at !== -1 && (history.length > 1 || isDateItem(item))) history.splice(at, 1);
     } else if (at === -1) {
       history.push(fromCloud(change));
     } else if (!pending.entries.has(key)) {
@@ -183,7 +187,8 @@ function mergeHistory(
   }
 
   const sorted = sortNewestFirst(history);
-  return { ...item, history: sorted, lastDoneDate: sorted[0]?.date ?? item.lastDoneDate };
+  const empty = isDateItem(item) ? addedDay(item) : item.lastDoneDate;
+  return { ...item, history: sorted, lastDoneDate: sorted[0]?.date ?? empty };
 }
 
 /**
