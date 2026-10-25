@@ -40,7 +40,12 @@ import {
   dueCaption,
   entryCaption,
   historySummary,
+  dueLine,
+  untilText,
+  NOT_YET,
+  EMPTY_HISTORY,
 } from '../domain/items/display';
+import { isDateItem, lastDoneOf } from '../domain/items/due';
 import { secondaryLine } from '../utils/statusUtils';
 import { parseDate, formatDisplay, formatShort, todayString } from '../utils/dateUtils';
 import {
@@ -119,6 +124,7 @@ export default function DetailScreen() {
   async function handleMarkDone() {
     if (!item) return;
     const previousLastDoneDate = item.lastDoneDate;
+    const previousDueDate = item.dueDate ?? null;
     const { entryId } = await markItemDone(item.id);
     refresh();
     if (!entryId) {
@@ -130,7 +136,7 @@ export default function DetailScreen() {
       actionLabel: 'Undo',
       onAction: async () => {
         try {
-          await undoMarkDone(itemId, entryId, previousLastDoneDate);
+          await undoMarkDone(itemId, entryId, previousLastDoneDate, previousDueDate);
           refresh();
         } catch {
           showToast({ message: "Couldn't undo. Please try again." });
@@ -176,7 +182,10 @@ export default function DetailScreen() {
   if (!item) return null;
 
   const { status } = item;
-  const repeating = status.label !== null && item.repeatValue !== null && item.repeatUnit !== null;
+  // Anything with a due date can be marked done: a repeating item, or a date item
+  const repeating = status.label !== null && status.nextDueDate !== null && status.daysUntilDue !== null;
+  const dated = isDateItem(item);
+  const lastDone = lastDoneOf(item);
   const usual = usualIntervalDays(item);
   const gaps = gapsNewestFirst(item);
   const entries = item.history; // newest first
@@ -212,17 +221,25 @@ export default function DetailScreen() {
           </View>
           <CategoryTile name={item.name} category={item.category} size={56} />
           <Text style={styles.title} accessibilityRole="header">{item.name}</Text>
-          <Text style={styles.subtitle}>{repeatText(item.repeatValue, item.repeatUnit)}</Text>
+          <Text style={styles.subtitle}>
+            {dated ? untilText(item.repeatValue, item.repeatUnit) : repeatText(item.repeatValue, item.repeatUnit)}
+          </Text>
         </View>
 
         {/* Status card */}
         <View style={[styles.card, styles.statusCard]} testID="detail-status-card">
           <View style={styles.statusRow}>
             <StatusChip label={status.label} />
-            <Text style={[type.secondary, styles.shrink]}>{secondaryLine(status)}</Text>
+            <Text style={[type.secondary, styles.shrink]}>
+              {dated && status.daysUntilDue !== null ? dueLine(status.daysUntilDue) : secondaryLine(status)}
+            </Text>
           </View>
           <View style={styles.columns}>
-            <Column heading="Last done" value={formatShort(parseDate(item.lastDoneDate))} sub={daysAgoText(status.daysSince)} />
+            {lastDone ? (
+              <Column heading="Last done" value={formatShort(parseDate(lastDone))} sub={daysAgoText(status.daysSince)} />
+            ) : (
+              <Column heading="Last done" value={NOT_YET} sub="" testID="detail-last-done" />
+            )}
             {status.nextDueDate && status.daysUntilDue !== null && (
               <Column
                 heading={overdue ? 'Was due' : 'Next due'}
@@ -353,8 +370,15 @@ export default function DetailScreen() {
               <View style={styles.dueCard} testID="detail-due-marker">
                 <Text style={styles.entryDate}>Due {formatDisplay(status.nextDueDate)}</Text>
                 <Text style={type.secondary}>
-                  {dueCaption(status.daysUntilDue, item.repeatValue!, item.repeatUnit!)}
+                  {dated ? dueLine(status.daysUntilDue) : dueCaption(status.daysUntilDue, item.repeatValue!, item.repeatUnit!)}
                 </Text>
+              </View>
+            </TimelineRow>
+          )}
+          {entries.length === 0 && (
+            <TimelineRow dot={<View style={styles.olderDot} />} last first={!repeating}>
+              <View style={[styles.card, styles.entryCard]} testID="detail-history-empty">
+                <Text style={[type.secondary, styles.shrink]}>{EMPTY_HISTORY}</Text>
               </View>
             </TimelineRow>
           )}
@@ -376,7 +400,7 @@ export default function DetailScreen() {
                 <View style={[styles.card, styles.entryCard]} testID={`history-entry-${i}`}>
                   <View style={styles.shrink}>
                     <Text style={styles.entryDate}>{display(entry.date)}</Text>
-                    <Text style={type.secondary}>{entryCaption(isFirstEver ? null : gaps[i])}</Text>
+                    <Text style={type.secondary}>{entryCaption(isFirstEver ? null : gaps[i], dated)}</Text>
                     {entry.note ? <Text style={styles.note}>{entry.note}</Text> : null}
                     {doneBy(item, entry, household) ? (
                       <Text style={type.secondary} testID={`history-done-by-${i}`}>{doneBy(item, entry, household)}</Text>
@@ -409,9 +433,9 @@ export default function DetailScreen() {
   );
 }
 
-function Column({ heading, value, sub }: { heading: string; value: string; sub: string }) {
+function Column({ heading, value, sub, testID }: { heading: string; value: string; sub: string; testID?: string }) {
   return (
-    <View style={styles.column}>
+    <View style={styles.column} testID={testID}>
       <Text style={styles.columnHeading}>{heading}</Text>
       <Text style={styles.columnValue}>{value}</Text>
       <Text style={type.secondary}>{sub}</Text>

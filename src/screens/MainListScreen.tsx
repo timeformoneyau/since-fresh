@@ -119,6 +119,7 @@ export default function MainListScreen() {
 
   async function handleMarkDone(item: SinceItem) {
     const previousLastDoneDate = item.lastDoneDate;
+    const previousDueDate = item.dueDate ?? null;
     let entryId: string | null;
     try {
       ({ entryId } = await markItemDone(item.id));
@@ -137,7 +138,7 @@ export default function MainListScreen() {
       actionLabel: 'Undo',
       onAction: async () => {
         try {
-          await undoMarkDone(item.id, entryId, previousLastDoneDate);
+          await undoMarkDone(item.id, entryId, previousLastDoneDate, previousDueDate);
         } catch {
           showToast({ message: "Couldn't undo. Please try again." });
         }
@@ -265,7 +266,7 @@ export default function MainListScreen() {
             <View style={styles.summaryOverlap}>
               <SystemStatus items={shown} />
             </View>
-            <RemindersOffNotice hasRepeating={items.some((i) => i.repeatValue !== null)} />
+            <RemindersOffNotice hasRepeating={items.some((i) => i.status.nextDueDate !== null)} />
             <View style={[styles.filterRow, styles.wrap]} accessibilityRole="tablist" accessibilityLabel="View">
               {listViewsFor(inHousehold).map((v) => (
                 <TouchableOpacity

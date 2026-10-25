@@ -1,0 +1,65 @@
+appId: com.since.app
+name: Until it's due - a trial in 3 months, no repeat, Done makes it a once-off record
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Audible trial"
+- hideKeyboard
+- assertVisible:
+    id: "add-track-until"
+- scrollUntilVisible:
+    element:
+      id: "add-due-in-3-months"
+- tapOn:
+    id: "add-due-in-3-months"
+# No repeat is the default; the helper doesn't say "no reminders"
+- scrollUntilVisible:
+    element:
+      id: "add-until-once-info"
+- assertVisible: "We'll remind you before it's due.*"
+- scrollUntilVisible:
+    element:
+      id: "add-save-button"
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Audible trial"
+    timeout: 10000
+- assertVisible: "Due in .* days"
+# Not done yet: the item screen says so
+- tapOn:
+    id: "item-Audible trial-history"
+- extendedWaitUntil:
+    visible:
+      id: "detail-last-done"
+    timeout: 10000
+- assertVisible: "Not yet"
+- assertVisible:
+    id: "detail-history-empty"
+- takeScreenshot: 18-until-trial-detail
+# Cancelled the trial: Done
+- tapOn:
+    id: "detail-mark-done-button"
+- extendedWaitUntil:
+    visible:
+      id: "history-entry-0"
+    timeout: 10000
+- assertNotVisible:
+    id: "detail-mark-done-button"
+- tapOn:
+    id: "detail-back"
+- extendedWaitUntil:
+    visible:
+      id: "item-Audible trial"
+    timeout: 10000
+- assertVisible: "Once off"
+- assertVisible:
+    id: "item-Audible trial-meta"
+    text: "Done today"
+- assertNotVisible:
+    id: "item-Audible trial-done"
+- takeScreenshot: 18-until-trial-once-off

@@ -146,3 +146,66 @@ describe('Edit', () => {
     expect('dueDate' in (await loadItems())[0]).toBe(false);
   });
 });
+
+describe('the home card and the item screen', () => {
+  const dueIn = (n: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const shown = (date: string) => {
+    const d = new Date(`${date}T00:00:00`);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).replace('Sept', 'Sep');
+  };
+
+  it('the card shows the due date and how far off it is; the bar starts empty', async () => {
+    await createItem({ name: 'Car rego', category: 'Auto', lastDoneDate: todayString(), repeatValue: 1, repeatUnit: 'years', dueDate: dueIn(40) });
+    render(<App />);
+    expect(await screen.findByTestId('item-Car rego-meta')).toHaveTextContent(`Due ${shown(dueIn(40))}`);
+    expect(screen.getByText('Due in 40 days')).toBeTruthy();
+    expect(screen.getByTestId('item-Car rego-done')).toBeTruthy();
+  });
+
+  it('an overdue date item says so', async () => {
+    await createItem({ name: 'Licence', category: 'Admin', lastDoneDate: todayString(), repeatValue: null, repeatUnit: null, dueDate: dueIn(-6) });
+    render(<App />);
+    expect(await screen.findByText('Overdue by 6 days')).toBeTruthy();
+  });
+
+  it('the item screen: Not yet, an empty history, and Next due from the due date', async () => {
+    await createItem({ name: 'Car rego', category: 'Auto', lastDoneDate: todayString(), repeatValue: 1, repeatUnit: 'years', dueDate: dueIn(40) });
+    render(<App />);
+    fireEvent.press(await screen.findByTestId('item-Car rego-history'));
+    expect(await screen.findByTestId('detail-last-done')).toHaveTextContent(/Not yet/);
+    expect(screen.getByTestId('detail-history-empty')).toHaveTextContent('Nothing here yet. When you mark it done, it shows up here.');
+    expect(screen.getByTestId('detail-history-summary')).toHaveTextContent('No entries yet');
+    expect(screen.getByText("Until it's due · Repeats every year")).toBeTruthy();
+    expect(screen.getByText('Next due')).toBeTruthy();
+    expect(screen.getByTestId('detail-due-marker')).toHaveTextContent(/Due in 40 days/);
+  });
+
+  it('Done on the item screen moves a repeating date item on a year, and Undo puts it back', async () => {
+    const created = await createItem({ name: 'Car rego', category: 'Auto', lastDoneDate: todayString(), repeatValue: 1, repeatUnit: 'years', dueDate: dueIn(40) });
+    render(<App />);
+    fireEvent.press(await screen.findByTestId('item-Car rego-history'));
+    fireEvent.press(await screen.findByTestId('detail-mark-done-button'));
+    expect(await screen.findByTestId('history-entry-0')).toHaveTextContent(/First time done/);
+    const [after] = await loadItems();
+    expect(after.dueDate).toBe(quickPickDate(1, 'years', dueIn(40)));
+    expect(screen.queryByTestId('detail-history-empty')).toBeNull();
+
+    fireEvent.press(await screen.findByText('Undo'));
+    await screen.findByTestId('detail-history-empty');
+    const [undone] = await loadItems();
+    expect(undone).toMatchObject({ id: created.id, dueDate: dueIn(40), history: [] });
+  });
+
+  it('Done on the card turns a one-off trial into a once-off record', async () => {
+    await createItem({ name: 'Audible trial', category: 'Finance', lastDoneDate: todayString(), repeatValue: null, repeatUnit: null, dueDate: dueIn(90) });
+    render(<App />);
+    fireEvent.press(await screen.findByTestId('item-Audible trial-done'));
+    expect(await screen.findByText('Once off')).toBeTruthy();
+    expect(screen.getByTestId('item-Audible trial-meta')).toHaveTextContent('Done today');
+    expect(screen.queryByTestId('item-Audible trial-done')).toBeNull();
+  });
+});

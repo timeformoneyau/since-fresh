@@ -14,6 +14,10 @@ name: Empty list - tap a starter, Add opens filled in, change it, then save
       id: "add-name-input"
     timeout: 10000
 - assertVisible: "Smoke alarm battery"
+# Below "How do you want to track it?"
+- scrollUntilVisible:
+    element:
+      id: "add-stepper-minus"
 - assertVisible:
     id: "add-repeat-value"
     text: "12"

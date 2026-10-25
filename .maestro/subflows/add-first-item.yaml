@@ -8,6 +8,10 @@ appId: com.since.app
 - inputText: ${NAME}
 # Not a keyboard test (Save with the keyboard open has its own flow)
 - hideKeyboard
+# Below "How do you want to track it?"
+- scrollUntilVisible:
+    element:
+      id: "add-onceoff-option"
 - tapOn:
     id: "add-onceoff-option"
 - scrollUntilVisible:
