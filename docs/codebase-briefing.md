@@ -16,7 +16,9 @@ don't do often enough** and quietly reminds you when they're due.
 The mental model is deliberately **not** a calendar or to-do app. There are no appointments and
 no hard deadlines — just recurring real-life maintenance (dentist, car service, smoke-alarm
 battery, air filter) where the value is knowing **how long it's been** and getting a gentle nudge,
-not being nagged.
+not being nagged. Some things do have a known date (car rego due 5 Dec, cancel a trial in 3
+months): those are tracked **"Until it's due"** (section 4), with the same calm status and
+reminders.
 
 Food tracking (scanning use-by dates) used to live here and was removed in October 2026; it now
 belongs to a separate app, UseBy.
@@ -78,8 +80,9 @@ interface SinceItem {
   id: string;
   name: string;
   category: string;
-  lastDoneDate: string;          // YYYY-MM-DD; always history[0].date, kept for older builds
-  history: CompletionEvent[];    // newest first, never empty
+  lastDoneDate: string;          // YYYY-MM-DD; history[0].date, kept for older builds (never null:
+                                 // they drop an item without it). A date item not done yet: the day added
+  history: CompletionEvent[];    // newest first; never empty, except a date item not done yet
   repeatValue: number | null;    // null = "Once off" (no reminders)
   repeatUnit: RepeatUnit | null;
   createdAt: string;
@@ -87,19 +90,26 @@ interface SinceItem {
   ownerId?: string;              // set only on another member's shared item
   householdId?: string;          // set only on shared items
   lookedAfterBy?: string | null; // shared items: the member who looks after it; absent/null = Anyone
+  dueDate?: string | null;       // "Until it's due" (YYYY-MM-DD); absent/null = "Since I last did it"
 }
 
 const DEFAULT_CATEGORIES =
   ['Household','Health','Auto','Family','Admin','Finance','Purchases','Other'];
 ```
 
-Due date: `nextDueDate = lastDoneDate + repeatValue · repeatUnit`. Items with no repeat are
+Due date (`domain/items/due.ts`, `nextDueOf`): a **date item** (one with `dueDate`, "Until it's
+due") is due on that date. Its history starts empty ("Last done: Not yet"). Done on a repeating
+date item moves `dueDate` on by the repeat from the previous due date until it's after today, so
+renewing early keeps the cycle; Done on a one-off date item clears `dueDate`, and it becomes a
+once-off record. Undo puts the due date back. How an item is tracked can't be switched on Edit
+(v1). Every other item: `nextDueDate = lastDoneDate + repeatValue · repeatUnit`. Items with no repeat are
 "Once off" (formerly "Tracked only"). Storage v3 converted any leftover scanned-food items to
 once off. Stored data changes are additive only (rollbacks run older code on newer data); every
 new shape gets a case in `src/domain/items/migrations.test.ts`.
 
-Cloud (`supabase/schema.sql`, migrations `002`–`006`): `items` (server-set `server_updated_at`,
-`kind`, `household_id`, `looked_after_by`), `deleted_items` (tombstones), `completion_events` (one row per entry,
+Cloud (`supabase/schema.sql`, migrations `002`–`007`): `items` (server-set `server_updated_at`,
+`kind`, `household_id`, `looked_after_by`, `due_date` (text, 007; a value that isn't a real
+YYYY-MM-DD date is refused with SN008, which sync parks)), `deleted_items` (tombstones), `completion_events` (one row per entry,
 soft deleted), `households`, `household_members`, `household_invites`, `item_mutes`,
 `household_join_failures` (failed invite codes, for the rate limit; no client access).
 Membership changes only through database functions (`create_household`, `create_invite`,
@@ -116,7 +126,7 @@ This wording is central to the product's voice.
 | Label | When (days until due) | Card accent |
 |---|---|---|
 | `All good` | beyond the "coming up" window | neutral grey |
-| `Coming up` | within advance-notice window (1–45 days by interval) | amber |
+| `Coming up` | within advance-notice window (1–45 days by interval; date items at least 7) | amber |
 | `About now` | −2 to 0 | amber |
 | `It's been a while` | −3 to −14 | rust |
 | `Getting overdue` | −15 to −45 | red |
@@ -125,6 +135,9 @@ This wording is central to the product's voice.
 
 - Secondary line per card: "Next in N days" / "Tomorrow" / "Due today" / "Overdue by N days".
 - Each card also shows "Done today" / "Last done yesterday" / "Last done N days ago".
+- Date items: the card shows "Due 5 Dec 2026" with "Due in 40 days" / "Due tomorrow" / "Due today"
+  / "Overdue by N days". A date item's status counts against its due date; its bar runs from
+  the day it was added (or last done) to the due date. A past due date is allowed (overdue).
 - List is sorted most-urgent-first (`sortItems`): overdue groups first (most overdue first),
   then upcoming (nearest first), non-repeating last.
 
@@ -161,7 +174,13 @@ no passwords (`domain/auth/codes.ts`); the same code creates an account for a ne
   category and usual gap; nothing is saved until "Track this". A snoozed card adds
   "Snoozed until Tuesday" under its (unchanged) status. Opening the list (on focus) runs a
   sync, and so does coming back to the app from the background (`useSyncOnResume`).
-- **Add** (`AddItemScreen`) and **Edit** (`EditItemScreen`) share `ItemForm`: name, "Who is
+- **Add** (`AddItemScreen`) and **Edit** (`EditItemScreen`) share `ItemForm`: name, **"How do you
+  want to track it?"** ("Since I last did it" / "Until it's due"; Add only, preselected to Until
+  for names with rego, registration, licence, license, passport, subscription, trial, renewal or
+  insurance, `suggestions.ts`; Edit shows it as a label). The Until path asks "When is it due?"
+  (date picker, or In 1 month / 3 months / 1 year) and "Repeat after that?" (No, or Yes with the
+  stepper from 1 year); it has no last-done date. The car rego starter opens on Until, yearly.
+  The rest: "Who is
   this for?" (Just me / Household; only in a household, only for the item's creator), "Repeats"
   (every N days/weeks/months/years) or "Once off", last-done date, category. On a shared item
   (any member, not only its creator): **"Who looks after this?"** (Anyone / You / each other
@@ -204,7 +223,10 @@ matters."** Local notifications only (no server push). What to schedule is worke
 schedules. Per repeating item, up to 3 lifecycle notifications fire at the **reminder time**
 (9 am unless changed in Account/Settings; kept on the phone):
 
-1. **Coming up** — interval-aware advance notice ("Dentist due in 7 days").
+1. **Coming up** — interval-aware advance notice ("Dentist due in 7 days"): 1 day before for
+   intervals up to 14 days, 3 up to 45, 7 up to 120, 14 up to 240, 30 up to 540, else 45. Date
+   items use the same, but never under 7 days (a one-off's interval is from when it was added to
+   its due date). Date items, one-off or repeating, get all three, against their due date.
 2. **Due today** — "Dentist due today".
 3. **7-days-overdue** — "Dentist overdue by 7 days".
 
@@ -220,8 +242,8 @@ priority as the 7-day one); after that the usual schedule (7-day overdue, groupe
 A snooze only quiets reminders: due date, history, status and sort order are untouched. It is
 per person and kept on this phone only (`@since_snoozes_v1`, not synced, not in the backup
 file), so it doesn't follow you to a second phone. It is recorded against the item's
-last-done date and repeat: marking done (here or synced from another phone), changing the
-repeat, or deleting ends it; ended snoozes are pruned at every reschedule.
+last-done date, repeat and (date items) due date: marking done (here or synced from another
+phone), changing the repeat or due date, or deleting ends it; ended snoozes are pruned at every reschedule.
 
 **Who looks after a shared item** (`remindsMe` in `plan.ts`): nobody chosen (Anyone) means
 every member's phone reminds, as before. Someone chosen means only that person's phone
@@ -287,6 +309,7 @@ src/
     storage.ts            AsyncStorage load/save (via the migrations envelope)
     migrations.ts         versioned storage envelope + upgrades of old items
     cloudStorage.ts       Supabase reads/writes for items, entries and tombstones
+    due.ts                "Until it's due": next due date, coming-up notice, Done's new due date
     history.ts, undo.ts, display.ts, derive.ts   pure helpers
   domain/sync/
     engine.ts             syncNow(): household refresh, push queue, pull, merge, reschedule
@@ -398,6 +421,11 @@ scheduling and sync in step.
   unless a real error, which shows one calm line per session; `domain/sync/resume.ts`).
 - **Time zones:** entry dates are local calendar dates; members in different time zones can see
   an entry on different days. Not handled yet.
+- **"Until it's due"** (migration 007). Older builds (rollback, or another member's phone not yet
+  updated) see a date item as a "since" item: last done the day it was added, due a repeat later
+  (or once off), and their Done doesn't move the due date. Nothing is lost: they keep the item
+  and never send `due_date`. "Add a past entry" on a date item is a record only; it doesn't move
+  the due date (Done does).
 - **Supabase is configured** (`extra.supabaseUrl` / publishable `extra.supabaseAnonKey` in
   `app.json`; schema in `supabase/schema.sql`; migrations 003 and 004 applied 20 Oct 2026,
   005 on 23 Oct 2026; 006 (Play hardening) is run by hand, in order, after 005).
