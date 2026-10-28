@@ -7,12 +7,10 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useHeaderHeight } from '@react-navigation/elements';
 import { RootStackParamList } from '../types';
 import { DerivedItem } from '../domain/items/types';
 import { LIMITS } from '../domain/sync/limits';
@@ -27,6 +25,7 @@ import { parseDate, formatDisplay, todayString } from '../utils/dateUtils';
 import { palette, colours, fonts, type, radius, space, cardShadow, TAP } from '../theme/tokens';
 import { useToast } from '../components/Toast';
 import DatePickerModal from '../components/DatePickerModal';
+import KeyboardSafeView from '../components/KeyboardSafeView';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'EditEntry'>;
 type Route = RouteProp<RootStackParamList, 'EditEntry'>;
@@ -46,7 +45,6 @@ export default function EditHistoryEntryScreen() {
   const navigation = useNavigation<Nav>();
   const { itemId, entryId } = useRoute<Route>().params;
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
   const showToast = useToast();
 
   const [item, setItem] = useState<DerivedItem | null>(null);
@@ -115,7 +113,7 @@ export default function EditHistoryEntryScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior="padding" keyboardVerticalOffset={headerHeight}>
+    <KeyboardSafeView style={styles.screen}>
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: 40 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
@@ -191,7 +189,7 @@ export default function EditHistoryEntryScreen() {
           onCancel={() => setPicking(false)}
         />
       )}
-    </KeyboardAvoidingView>
+    </KeyboardSafeView>
   );
 }
 

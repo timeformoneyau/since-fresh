@@ -1,0 +1,65 @@
+appId: com.since.app
+name: Add - changing the unit converts the number; the form scrolls to its end and Track this stays pinned
+---
+- runFlow: subflows/launch.yaml
+- tapOn:
+    id: "empty-add-button"
+- tapOn:
+    id: "add-name-input"
+- inputText: "Water plants"
+# Track this is pinned above the keyboard while it's open
+- assertVisible:
+    id: "add-save-button"
+- hideKeyboard
+# 30 days down to 20
+- scrollUntilVisible:
+    element:
+      id: "add-stepper-minus"
+- repeat:
+    times: 10
+    commands:
+      - tapOn:
+          id: "add-stepper-minus"
+- assertVisible:
+    id: "add-repeat-value"
+    text: "20"
+# 20 days is 3 weeks and 1 month; back to days gives 20 again, not 30
+- scrollUntilVisible:
+    element:
+      id: "add-unit-weeks"
+- tapOn:
+    id: "add-unit-weeks"
+- assertVisible:
+    id: "add-repeat-value"
+    text: "3"
+- tapOn:
+    id: "add-unit-months"
+- assertVisible:
+    id: "add-repeat-value"
+    text: "1"
+- tapOn:
+    id: "add-unit-days"
+- assertVisible:
+    id: "add-repeat-value"
+    text: "20"
+- scrollUntilVisible:
+    element:
+      id: "add-next-due"
+- takeScreenshot: 17-units-converted
+# The whole form scrolls, down to the last category chip, and Track this is
+# still on screen below it
+- scrollUntilVisible:
+    element:
+      id: "add-category-Other"
+- assertVisible:
+    id: "add-category-Purchases"
+- assertVisible:
+    id: "add-save-button"
+- takeScreenshot: 17-form-end
+- tapOn:
+    id: "add-save-button"
+- extendedWaitUntil:
+    visible:
+      id: "item-Water plants"
+    timeout: 10000
+- assertVisible: ".*in 20 days.*"

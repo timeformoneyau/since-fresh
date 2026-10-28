@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -10,6 +9,7 @@ import { HOUSEHOLD_RULES, agreeToRulesText } from '../domain/household/report';
 import { syncNow } from '../domain/sync/engine';
 import { colours } from '../theme/tokens';
 import { authStyles as s } from './auth/authStyles';
+import KeyboardSafeView from '../components/KeyboardSafeView';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'HouseholdSetup'>;
 type Route = RouteProp<RootStackParamList, 'HouseholdSetup'>;
@@ -18,7 +18,6 @@ type Route = RouteProp<RootStackParamList, 'HouseholdSetup'>;
 export default function HouseholdSetupScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
   const { mode } = useRoute<Route>().params;
   const joining = mode === 'join';
   const [first, setFirst] = useState(''); // household name, or the code
@@ -50,7 +49,7 @@ export default function HouseholdSetupScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={s.flex} behavior="padding" keyboardVerticalOffset={headerHeight}>
+    <KeyboardSafeView style={s.flex}>
       <ScrollView
         contentContainerStyle={[s.container, { paddingBottom: 40 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
@@ -114,6 +113,6 @@ export default function HouseholdSetupScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardSafeView>
   );
 }

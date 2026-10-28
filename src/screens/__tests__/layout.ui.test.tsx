@@ -1,6 +1,8 @@
 import React from 'react';
-import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
-import { render, screen, fireEvent } from '@testing-library/react-native';
+import { Keyboard, ScrollView, StyleSheet, View } from 'react-native';
+import { render, screen, fireEvent, act } from '@testing-library/react-native';
+
+type ReactTestInstance = ReturnType<typeof screen.getByTestId>;
 import App from '../../../App';
 import { createItem } from '../../domain/items/service';
 
@@ -33,14 +35,75 @@ function isBelowStatusBar(testID: string) {
   return false;
 }
 
-function expectKeyboardSafe(minBottomPadding: number) {
-  const kav = screen.UNSAFE_getByType(KeyboardAvoidingView);
-  expect(kav.props.behavior).toBe('padding');
-  // Below a native-stack header, so it must offset by the header's height
-  expect(kav.props.keyboardVerticalOffset).toBeGreaterThan(0);
-  const scroll = kav.findByType(ScrollView);
-  const pb = (flat(scroll.props.contentContainerStyle) as { paddingBottom?: number }).paddingBottom;
-  expect(pb).toBeGreaterThanOrEqual(minBottomPadding + INSETS.bottom);
+// The keyboard as Android reports it (ReactRootView): shown, with its top edge
+// on screen and its height above the nav bar; hidden, with the visible window
+// height, which under edge-to-edge is shorter than the app's own frame.
+const SCREEN = 780;
+const KEYBOARD = 280;
+const KEYBOARD_TOP = SCREEN - INSETS.bottom - KEYBOARD;
+const SHOWN = { endCoordinates: { screenX: 0, screenY: KEYBOARD_TOP, width: 360, height: KEYBOARD } };
+const HIDDEN = { endCoordinates: { screenX: 0, screenY: SCREEN - INSETS.top - INSETS.bottom, width: 360, height: 0 } };
+const HEADER = INSETS.top + 56;
+
+let keyboardListeners: Record<string, ((e: unknown) => void)[]> = {};
+beforeEach(() => {
+  keyboardListeners = {};
+  jest.spyOn(Keyboard, 'addListener').mockImplementation(((name: string, fn: (e: unknown) => void) => {
+    (keyboardListeners[name] ??= []).push(fn);
+    return { remove: () => { keyboardListeners[name] = keyboardListeners[name].filter((f) => f !== fn); } };
+  }) as never);
+  // Every screen view sits under the header and reaches the bottom of the screen
+  (View.prototype as unknown as { measureInWindow: unknown }).measureInWindow = (
+    cb: (x: number, y: number, w: number, h: number) => void,
+  ) => cb(0, HEADER, 360, SCREEN - HEADER);
+});
+afterEach(() => jest.restoreAllMocks());
+
+async function keyboard(name: 'keyboardDidShow' | 'keyboardDidHide', event: unknown) {
+  await act(async () => { for (const fn of keyboardListeners[name] ?? []) fn(event); });
+}
+
+function ancestors(testID: string): ReactTestInstance[] {
+  const out: ReactTestInstance[] = [];
+  for (let node = screen.getByTestId(testID).parent; node; node = node.parent) out.push(node);
+  return out;
+}
+
+/** Space kept below an element by the views around it. */
+function bottomPadding(testID: string) {
+  return ancestors(testID)
+    .filter((n) => n.type === View)
+    .reduce((sum, n) => sum + ((flat(n.props.style) as { paddingBottom?: number }).paddingBottom ?? 0), 0);
+}
+
+/** Lay out the screen, as the phone does once it's drawn. */
+async function layOut(testID: string) {
+  for (const node of ancestors(testID)) {
+    if (node.props.onLayout) {
+      await act(async () => node.props.onLayout({ persist() {}, nativeEvent: { layout: { x: 0, y: 0, width: 360, height: SCREEN - HEADER } } }));
+    }
+  }
+}
+
+/**
+ * The save button stays put below the form (not inside the scroll), clear of
+ * the gesture bar, above the keyboard while it's open, and with no space left
+ * over once it closes.
+ */
+async function expectSaveBarKeyboardSafe(prefix: 'add' | 'edit') {
+  const save = `${prefix}-save-button`;
+  await layOut(save);
+  expect(ancestors(save).some((n) => n.type === ScrollView)).toBe(false);
+  expect(ancestors(`${prefix}-name-input`).some((n) => n.type === ScrollView)).toBe(true);
+  expect(bottomPadding(save)).toBeGreaterThanOrEqual(INSETS.bottom);
+  expect(bottomPadding(save)).toBeLessThanOrEqual(INSETS.bottom + 24);
+
+  await keyboard('keyboardDidShow', SHOWN);
+  expect(bottomPadding(save)).toBeGreaterThanOrEqual(SCREEN - KEYBOARD_TOP);
+
+  await keyboard('keyboardDidHide', HIDDEN);
+  expect(bottomPadding(save)).toBeGreaterThanOrEqual(INSETS.bottom);
+  expect(bottomPadding(save)).toBeLessThanOrEqual(INSETS.bottom + 24);
 }
 
 it('empty list keeps its content below the status bar', async () => {
@@ -50,11 +113,11 @@ it('empty list keeps its content below the status bar', async () => {
   expect(isBelowStatusBar('main-add-button')).toBe(true);
 });
 
-it('Add screen: keyboard avoidance and Save clear of the nav bar', async () => {
+it('Add screen: Track this pinned above the keyboard and the nav bar, nothing left over when the keyboard closes', async () => {
   render(<App />);
   fireEvent.press(await screen.findByTestId('empty-add-button'));
   await screen.findByTestId('add-name-input');
-  expectKeyboardSafe(60);
+  await expectSaveBarKeyboardSafe('add');
 });
 
 it('list header buttons sit below the status bar', async () => {
@@ -64,9 +127,9 @@ it('list header buttons sit below the status bar', async () => {
   expect(isBelowStatusBar('main-add-button')).toBe(true);
 });
 
-it('Edit screen: keyboard avoidance and Save clear of the nav bar', async () => {
+it('Edit screen: Save changes pinned above the keyboard and the nav bar, nothing left over when the keyboard closes', async () => {
   render(<App />);
   fireEvent.press(await screen.findByTestId('item-Milk-edit'));
   await screen.findByTestId('edit-name-input');
-  expectKeyboardSafe(60);
+  await expectSaveBarKeyboardSafe('edit');
 });

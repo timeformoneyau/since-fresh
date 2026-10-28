@@ -32,8 +32,9 @@ function stepTo(value: number) {
 async function addItem(from: ListState, name: string, repeat?: { value: number; unit: string }) {
   fireEvent.changeText(await openAdd(from), name);
   if (repeat) {
-    stepTo(repeat.value);
+    // Unit first: changing it converts the number
     fireEvent.press(screen.getByTestId(`add-unit-${repeat.unit}`));
+    stepTo(repeat.value);
   } else {
     fireEvent.press(screen.getByTestId('add-onceoff-option'));
   }

@@ -6,24 +6,22 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useHeaderHeight } from '@react-navigation/elements';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { RepeatUnit, DEFAULT_CATEGORIES } from '../types';
 import { todayString, formatDisplay, formatStorage, parseDate, getNextDueDate } from '../utils/dateUtils';
 import { getSuggestion } from '../utils/suggestions';
 import { intervalText } from '../domain/items/display';
 import { palette, colours, fonts, type, radius, space, cardShadow, TAP } from '../theme/tokens';
+import { convertRepeat, MIN_REPEAT, MAX_REPEAT } from '../domain/items/repeat';
 import DatePickerModal from './DatePickerModal';
+import KeyboardSafeView from './KeyboardSafeView';
 import LookAfterChoices from './LookAfterChoices';
 import { LOOK_AFTER_COPY, type LookAfterChoice } from '../domain/household/rules';
 import { LIMITS } from '../domain/sync/limits';
 
 const REPEAT_UNITS: RepeatUnit[] = ['days', 'weeks', 'months', 'years'];
-const MIN_REPEAT = 1;
-const MAX_REPEAT = 99;
 
 export interface ItemFormValues {
   name: string;
@@ -49,7 +47,7 @@ interface Props {
   suggestFromName?: boolean;
   autoFocusName?: boolean;
   onSubmit: (values: ItemFormValues) => void;
-  /** Extra content under the main button (Edit: delete). */
+  /** Extra content at the end of the form, under the last card (Edit: delete). */
   footer?: React.ReactNode;
   /** Offer "Who is this for?" (households): the household's name. */
   householdName?: string;
@@ -78,7 +76,6 @@ export default function ItemForm({
   lookAfter,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
   const nameRef = useRef<TextInput>(null);
 
   const [name, setName] = useState(initial.name);
@@ -87,8 +84,14 @@ export default function ItemForm({
   const [repeats, setRepeats] = useState(initial.repeatValue !== null);
   const [shared, setShared] = useState(initial.shared ?? false);
   const [lookedAfterBy, setLookedAfterBy] = useState<string | null>(initial.lookedAfterBy ?? null);
-  const [repeatValue, setRepeatValue] = useState(initial.repeatValue ?? 30);
+  // The repeat as last set by hand (or by a suggestion), in its own unit.
+  // Other units are worked out from it, so switching back never drifts.
+  const [repeatSource, setRepeatSource] = useState<{ value: number; unit: RepeatUnit }>({
+    value: initial.repeatValue ?? 30,
+    unit: initial.repeatUnit ?? 'days',
+  });
   const [repeatUnit, setRepeatUnit] = useState<RepeatUnit>(initial.repeatUnit ?? 'days');
+  const repeatValue = convertRepeat(repeatSource.value, repeatSource.unit, repeatUnit);
   const [intervalTouched, setIntervalTouched] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showNameHint, setShowNameHint] = useState(false);
@@ -103,7 +106,7 @@ export default function ItemForm({
   const suggestion = suggestFromName ? getSuggestion(name) : null;
   useEffect(() => {
     if (suggestion && !intervalTouched) {
-      setRepeatValue(suggestion.repeatValue);
+      setRepeatSource({ value: suggestion.repeatValue, unit: suggestion.repeatUnit });
       setRepeatUnit(suggestion.repeatUnit);
     }
   }, [suggestion?.repeatValue, suggestion?.repeatUnit, intervalTouched]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -119,7 +122,7 @@ export default function ItemForm({
 
   function step(by: number) {
     setIntervalTouched(true);
-    setRepeatValue((v) => Math.min(MAX_REPEAT, Math.max(MIN_REPEAT, v + by)));
+    setRepeatSource({ value: Math.min(MAX_REPEAT, Math.max(MIN_REPEAT, repeatValue + by)), unit: repeatUnit });
   }
 
   function handleSubmit() {
@@ -140,13 +143,12 @@ export default function ItemForm({
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: colours.background }}
-      behavior="padding"
-      keyboardVerticalOffset={headerHeight}
-    >
+    // The form scrolls; the save button stays pinned below it, above the
+    // keyboard while it's open and clear of the gesture bar otherwise
+    <KeyboardSafeView style={{ backgroundColor: colours.background }} minPaddingBottom={insets.bottom}>
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: 60 + insets.bottom }]}
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
         <Text style={type.screenTitle} accessibilityRole="header">{title}</Text>
@@ -358,7 +360,14 @@ export default function ItemForm({
           </View>
         </View>
 
-        {/* 6. Save */}
+        {footer}
+      </ScrollView>
+
+      {/* 6. Save, pinned */}
+      <View style={styles.saveBar} testID={`${prefix}-save-bar`}>
+        {showNameHint && !canSave && (
+          <Text style={styles.saveHint} testID={`${prefix}-save-hint`}>Add a name to save</Text>
+        )}
         <TouchableOpacity
           style={[styles.primaryBtn, !canSave && styles.primaryBtnMuted]}
           onPress={handleSubmit}
@@ -372,11 +381,7 @@ export default function ItemForm({
         >
           <Text style={styles.primaryBtnText}>{submitLabel}</Text>
         </TouchableOpacity>
-        {showNameHint && !canSave && (
-          <Text style={styles.saveHint} testID={`${prefix}-save-hint`}>Add a name to save</Text>
-        )}
-        {footer}
-      </ScrollView>
+      </View>
 
       {showDatePicker && (
         <DatePickerModal
@@ -385,7 +390,7 @@ export default function ItemForm({
           onCancel={() => setShowDatePicker(false)}
         />
       )}
-    </KeyboardAvoidingView>
+    </KeyboardSafeView>
   );
 }
 
@@ -435,7 +440,8 @@ function StepButton(props: { testID: string; icon: IconName; label: string; disa
 }
 
 const styles = StyleSheet.create({
-  content: { padding: space.screen, paddingTop: 8, gap: space.cardGap },
+  scroll: { flex: 1 },
+  content: { padding: space.screen, paddingTop: 8, paddingBottom: 24, gap: space.cardGap },
   card: {
     backgroundColor: palette.card,
     borderRadius: radius.card,
@@ -531,7 +537,15 @@ const styles = StyleSheet.create({
     backgroundColor: palette.navy,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+  },
+  saveBar: {
+    paddingHorizontal: space.screen,
+    paddingTop: 12,
+    paddingBottom: 12,
+    gap: 8,
+    backgroundColor: colours.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: palette.border,
   },
   primaryBtnMuted: { opacity: 0.55 },
   primaryBtnText: { ...type.button, color: '#FFFFFF' },
