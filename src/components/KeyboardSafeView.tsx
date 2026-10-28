@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Dimensions, Keyboard, KeyboardEvent, KeyboardMetrics, Platform, StyleProp, View, ViewStyle } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { keyboardOverlap, OpenKeyboard } from '../utils/keyboard';
+import { Keyboard, KeyboardEvent, Platform, StyleProp, View, ViewStyle } from 'react-native';
+import { keyboardOverlap } from '../utils/keyboard';
 
 interface Props {
   style?: StyleProp<ViewStyle>;
@@ -21,46 +20,40 @@ interface Props {
  */
 export default function KeyboardSafeView({ style, minPaddingBottom = 0, children }: Props) {
   const ref = useRef<View>(null);
-  const insets = useSafeAreaInsets();
-  // The open keyboard; null while it's closed
-  const keyboard = useRef<OpenKeyboard | null>(null);
+  // The keyboard's top edge on screen; null while it's closed
+  const keyboardTop = useRef<number | null>(null);
   const [overlap, setOverlap] = useState(0);
 
   const measure = useCallback(() => {
-    if (keyboard.current === null) {
+    if (keyboardTop.current === null) {
       setOverlap(0);
       return;
     }
-    ref.current?.measureInWindow((_x, y, _w, height) => {
+    // measure, not measureInWindow: on Android, measureInWindow counts from
+    // below the status bar, while the keyboard's edge counts from the top of
+    // the screen. measure's page position counts from the top of the app,
+    // which draws edge to edge, so from the top of the screen too.
+    ref.current?.measure((_x, _y, _w, height, _pageX, pageY) => {
       // The keyboard may have closed while measuring
-      if (keyboard.current !== null) setOverlap(keyboardOverlap(y + height, keyboard.current));
+      if (keyboardTop.current !== null) setOverlap(keyboardOverlap(pageY + height, keyboardTop.current));
     });
   }, []);
 
-  // The bottom inset is read when the keyboard opens, so keep the latest
-  const bottomInset = useRef(insets.bottom);
-  bottomInset.current = insets.bottom;
-  const opened = useCallback((k: KeyboardMetrics) => {
-    keyboard.current = {
-      top: k.screenY,
-      height: k.height,
-      screenBottom: Dimensions.get('screen').height,
-      // On Android the keyboard's reported height stops at the nav bar
-      belowKeyboard: Platform.OS === 'android' ? bottomInset.current : 0,
-    };
+  const opened = useCallback((screenY: number) => {
+    keyboardTop.current = screenY;
     measure();
   }, [measure]);
 
   useEffect(() => {
     // Opened with the keyboard already up
     const metrics = Keyboard.isVisible() ? Keyboard.metrics() : undefined;
-    if (metrics) opened(metrics);
+    if (metrics) opened(metrics.screenY);
     const ios = Platform.OS === 'ios';
     const shown = Keyboard.addListener(ios ? 'keyboardWillShow' : 'keyboardDidShow', (e: KeyboardEvent) =>
-      opened(e.endCoordinates),
+      opened(e.endCoordinates.screenY),
     );
     const hidden = Keyboard.addListener(ios ? 'keyboardWillHide' : 'keyboardDidHide', () => {
-      keyboard.current = null;
+      keyboardTop.current = null;
       setOverlap(0);
     });
     return () => { shown.remove(); hidden.remove(); };
