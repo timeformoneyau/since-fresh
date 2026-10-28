@@ -4,11 +4,9 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
   ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types';
@@ -17,6 +15,7 @@ import { friendlyAuthError } from '../../domain/auth/errors';
 import { takeSignInNotice, onSignInNotice } from '../../domain/auth/sessionNotice';
 import { colours } from '../../theme/tokens';
 import { authStyles as s } from './authStyles';
+import KeyboardSafeView from '../../components/KeyboardSafeView';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'SignIn'>;
 
@@ -27,7 +26,6 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'SignIn'>;
 export default function SignInScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -56,11 +54,7 @@ export default function SignInScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={s.flex}
-      behavior="padding"
-      keyboardVerticalOffset={headerHeight}
-    >
+    <KeyboardSafeView style={s.flex}>
       <ScrollView
         contentContainerStyle={[s.container, { paddingBottom: 40 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
@@ -106,6 +100,6 @@ export default function SignInScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardSafeView>
   );
 }

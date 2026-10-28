@@ -6,16 +6,15 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { getSignedInUser, requestEmailChange } from '../domain/auth/service';
 import { friendlyAuthError } from '../domain/auth/errors';
 import { colours, fonts } from '../theme/tokens';
+import KeyboardSafeView from '../components/KeyboardSafeView';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'ChangeEmail'>;
 
@@ -26,7 +25,6 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'ChangeEmail'>;
 export default function ChangeEmailScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
   const [currentEmail, setCurrentEmail] = useState('');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -59,11 +57,7 @@ export default function ChangeEmailScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior="padding"
-      keyboardVerticalOffset={headerHeight}
-    >
+    <KeyboardSafeView style={styles.flex}>
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: 60 + insets.bottom }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.body}>
           {currentEmail
@@ -100,7 +94,7 @@ export default function ChangeEmailScreen() {
           <Text style={styles.saveBtnText}>{loading ? 'Sending…' : 'Send code'}</Text>
         </TouchableOpacity>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardSafeView>
   );
 }
 

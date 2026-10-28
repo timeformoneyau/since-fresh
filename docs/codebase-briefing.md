@@ -166,8 +166,13 @@ no passwords (`domain/auth/codes.ts`); the same code creates an account for a ne
   (every N days/weeks/months/years) or "Once off", last-done date, category. On a shared item
   (any member, not only its creator): **"Who looks after this?"** (Anyone / You / each other
   member; default Anyone). Add shows a keyword
-  **suggestion** (`suggestions.ts`). Save buttons: "Track this" / "Save changes". Edit also has
-  Delete (no confirm; Undo toast), offered only where the household rules allow it.
+  **suggestion** (`suggestions.ts`). Changing the unit converts the number via days (week 7,
+  month 30, year 365; rounded, 1–99; `domain/items/repeat.ts`), always from the value last set
+  by hand (or by a suggestion) in its own unit, so switching back gives it again exactly. Save
+  buttons: "Track this" / "Save changes", pinned below the scrolling form. Edit also has
+  Delete at the end of the form (no confirm; Undo toast), offered only where the household rules allow it.
+  Screens with typing use `components/KeyboardSafeView` rather than React Native's
+  KeyboardAvoidingView, which on Android left a blank block at the bottom after the keyboard closed.
 - **Detail** (`DetailScreen`) — status card, "Mark done today", **"Not yet"** (only when due
   or overdue: snooze reminders for 3 days, 1 week or 1 month, with Undo), "Add a past entry",
   **"Who looks after this?"** (shared items: Anyone / You / each member, saved straight
