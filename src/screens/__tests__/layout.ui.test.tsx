@@ -1,5 +1,5 @@
 import React from 'react';
-import { Keyboard, ScrollView, StyleSheet, View } from 'react-native';
+import { Dimensions, Keyboard, ScrollView, StyleSheet, View } from 'react-native';
 import { render, screen, fireEvent, act } from '@testing-library/react-native';
 
 type ReactTestInstance = ReturnType<typeof screen.getByTestId>;
@@ -35,13 +35,16 @@ function isBelowStatusBar(testID: string) {
   return false;
 }
 
-// The keyboard as Android reports it (ReactRootView): shown, with its top edge
-// on screen and its height above the nav bar; hidden, with the visible window
-// height, which under edge-to-edge is shorter than the app's own frame.
+// The keyboard as Android 11+ reports it (ReactRootView): shown, with its
+// height above the nav bar and a screenY that leaves out the nav bar, though
+// the keyboard's window covers it too (seen on the CI emulator: the reported
+// top was one nav bar lower than where the keyboard took taps); hidden, with
+// the visible window height, which under edge-to-edge is shorter than the
+// app's own frame.
 const SCREEN = 780;
 const KEYBOARD = 280;
 const KEYBOARD_TOP = SCREEN - INSETS.bottom - KEYBOARD;
-const SHOWN = { endCoordinates: { screenX: 0, screenY: KEYBOARD_TOP, width: 360, height: KEYBOARD } };
+const SHOWN = { endCoordinates: { screenX: 0, screenY: SCREEN - KEYBOARD, width: 360, height: KEYBOARD } };
 const HIDDEN = { endCoordinates: { screenX: 0, screenY: SCREEN - INSETS.top - INSETS.bottom, width: 360, height: 0 } };
 const HEADER = INSETS.top + 56;
 
@@ -53,6 +56,7 @@ beforeEach(() => {
     return { remove: () => { keyboardListeners[name] = keyboardListeners[name].filter((f) => f !== fn); } };
   }) as never);
   // Every screen view sits under the header and reaches the bottom of the screen
+  jest.spyOn(Dimensions, 'get').mockReturnValue({ width: 360, height: SCREEN, scale: 1, fontScale: 1 });
   (View.prototype as unknown as { measureInWindow: unknown }).measureInWindow = (
     cb: (x: number, y: number, w: number, h: number) => void,
   ) => cb(0, HEADER, 360, SCREEN - HEADER);
